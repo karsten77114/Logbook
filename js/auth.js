@@ -20,19 +20,23 @@ export function getFirebaseAuth() { return _auth }
 export function getFirebaseApp()  { return _app }
 
 /**
- * Google 登入（iOS Safari 用 redirect，桌面用 popup）
+ * Google 登入
+ * 優先使用 popup（iOS Safari 也適用）；
+ * 若 popup 被封鎖則 fallback 到 redirect。
  */
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider()
   provider.setCustomParameters({ prompt: 'select_account' })
-
-  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
-  if (isIOS) {
-    await signInWithRedirect(_auth, provider)
-    return null // redirect，結果在下次載入時取得
-  } else {
+  try {
     const result = await signInWithPopup(_auth, provider)
     return result.user
+  } catch (e) {
+    // popup 被封鎖時改用 redirect
+    if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
+      await signInWithRedirect(_auth, provider)
+      return null
+    }
+    throw e
   }
 }
 
@@ -44,14 +48,15 @@ export async function signInWithApple() {
   provider.addScope('name')
   provider.addScope('email')
   provider.setCustomParameters({ locale: 'zh-TW' })
-
-  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
-  if (isIOS) {
-    await signInWithRedirect(_auth, provider)
-    return null
-  } else {
+  try {
     const result = await signInWithPopup(_auth, provider)
     return result.user
+  } catch (e) {
+    if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
+      await signInWithRedirect(_auth, provider)
+      return null
+    }
+    throw e
   }
 }
 
@@ -63,7 +68,8 @@ export async function handleRedirectResult() {
     const result = await getRedirectResult(_auth)
     return result?.user || null
   } catch (e) {
-    console.error('Redirect result error:', e)
+    // auth/web-storage-unsupported = Safari ITP 封鎖了 cross-origin storage
+    console.warn('Redirect result error:', e.code, e.message)
     return null
   }
 }
