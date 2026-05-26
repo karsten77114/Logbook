@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════
-// Add Flight — 5-Step Wizard
+// Add Flight — 5-Step Wizard (Prototype Design)
 // ══════════════════════════════════════════════
 import { addFlight }               from '../db.js'
 import { state }                   from '../state.js'
@@ -12,216 +12,97 @@ import { APPROACH_TYPES,
          ALL_REGISTRATIONS,
          getTypeByReg }            from '../data/fleet.js'
 
-// Prefill from URL params (Kneeboard integration)
+const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
+const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
+const TOTAL       = 5
+
+// ── URL params prefill (Kneeboard integration) ─
 function parseUrlParams() {
-  const hash   = location.hash  // e.g. #add?fn=JX761&date=...
+  const hash   = location.hash
   const search = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
   const p      = new URLSearchParams(search)
   return {
-    flightNumber: p.get('fn')   || '',
-    date:         p.get('date') || todayUTC(),
-    from:         p.get('from') || '',
-    to:           p.get('to')   || '',
-    registration: p.get('reg')  || '',
-    aircraftType: p.get('type') || '',
+    flightNumber:       p.get('fn')   || '',
+    date:               p.get('date') || todayUTC(),
+    from:               p.get('from') || '',
+    to:                 p.get('to')   || '',
+    registration:       p.get('reg')  || '',
+    aircraftType:       p.get('type') || '',
     flightPlanDistance: parseInt(p.get('dist') || '0', 10),
   }
 }
 
+// ── Main render ───────────────────────────────
 export function renderAdd(root) {
   const prefill = parseUrlParams()
 
-  // Form state
   const form = {
-    // Step 1
-    date:         prefill.date,
-    flightNumber: prefill.flightNumber,
-    from:         prefill.from,
-    to:           prefill.to,
-    // Step 2
+    date:               prefill.date,
+    flightNumber:       prefill.flightNumber,
+    from:               prefill.from,
+    to:                 prefill.to,
     outTime: '', offTime: '', onTime: '', inTime: '',
     blockTime: 0, flightTime: 0, nightTime: 0,
-    // Step 3
-    registration: prefill.registration,
-    aircraftType: prefill.aircraftType || getTypeByReg(prefill.registration),
-    approachType: '',
-    runway: '',
-    // Step 4
+    registration:       prefill.registration,
+    aircraftType:       prefill.aircraftType || getTypeByReg(prefill.registration),
+    approachType:       '',
+    runway:             '',
     pfTakeoff: false, pfLanding: false, pic: false,
-    autoland: false,  goAround: false,  diverted: false,
+    autoland:  false, goAround:  false, diverted: false,
     totalPax: 0, totalPayload: 0,
     flightPlanDistance: prefill.flightPlanDistance,
-    // Step 5
     crew: [], crewNames: [],
   }
 
-  let currentStep = 0
-  const TOTAL = 5
+  // crewSlots[i] = crew object | null
+  const crewSlots   = [null, null, null, null]
+  let currentStep   = 0
+  let activeSlotIdx = -1
 
-  root.innerHTML = `
-    <div class="page">
-      <div class="topbar">
-        <button class="topbar-action btn-back" id="btn-cancel">✕</button>
-        <div class="topbar-title">New Flight</div>
-        <button class="topbar-action" id="btn-save" style="display:none">Save</button>
-      </div>
+  root.innerHTML = buildHTML(form)
 
-      <div class="wizard">
-        <div class="wizard-progress" id="wizard-progress">
-          ${[...Array(TOTAL)].map((_, i) =>
-            `<div class="wizard-dot ${i === 0 ? 'active' : ''}" data-dot="${i}"></div>`
-          ).join('')}
-        </div>
+  // Element refs
+  const wizSteps    = root.querySelector('#wizard-steps')
+  const btnBack     = root.querySelector('#btn-wiz-back')
+  const btnNext     = root.querySelector('#btn-wiz-next')
+  const sheetEl     = root.querySelector('#crew-sheet')
+  const sheetSearch = root.querySelector('#sheet-search')
+  const sheetList   = root.querySelector('#sheet-list')
 
-        <div class="wizard-steps" id="wizard-steps">
-          ${step1Html(form)}
-          ${step2Html(form)}
-          ${step3Html(form)}
-          ${step4Html(form)}
-          ${step5Html(form)}
-        </div>
-
-        <div class="wizard-footer">
-          <button class="btn btn-secondary" id="btn-prev" style="display:none">Back</button>
-          <button class="btn btn-primary" id="btn-next">Next →</button>
-        </div>
-      </div>
-    </div>
-  `
-
-  // Wire up navigation
+  // ── Cancel ───────────────────────────────────
   root.querySelector('#btn-cancel').addEventListener('click', () => navigate('list'))
 
-  const btnNext = root.querySelector('#btn-next')
-  const btnPrev = root.querySelector('#btn-prev')
-  const btnSave = root.querySelector('#btn-save')
-
-  btnNext.addEventListener('click', () => {
+  // ── Next / Save ──────────────────────────────
+  btnNext.addEventListener('click', async () => {
+    if (btnNext.classList.contains('save')) {
+      await saveFlight(root, form, crewSlots, btnNext)
+      return
+    }
     if (!validateStep(root, form, currentStep)) return
     collectStep(root, form, currentStep)
     currentStep++
-    goToStep(root, form, currentStep, TOTAL)
-    updateNav(root, currentStep, TOTAL, btnPrev, btnNext, btnSave)
+    goToStep(root, currentStep, wizSteps)
+    updateNav(root, currentStep, btnBack, btnNext)
   })
 
-  btnPrev.addEventListener('click', () => {
+  // ── Back ─────────────────────────────────────
+  btnBack.addEventListener('click', () => {
     currentStep--
-    goToStep(root, form, currentStep, TOTAL)
-    updateNav(root, currentStep, TOTAL, btnPrev, btnNext, btnSave)
+    goToStep(root, currentStep, wizSteps)
+    updateNav(root, currentStep, btnBack, btnNext)
   })
 
-  btnSave.addEventListener('click', () => saveFlight(root, form))
-
-  // Attach step-specific interactivity
-  attachStep1(root, form)
-  attachStep2(root, form)
-  attachStep3(root, form)
-  attachStep4(root, form)
-  attachStep5(root, form)
-}
-
-function goToStep(root, form, step, total) {
-  const stepsEl = root.querySelector('#wizard-steps')
-  stepsEl.style.transform = `translateX(-${step * 100}%)`
-
-  // Update dots
-  root.querySelectorAll('.wizard-dot').forEach((d, i) => {
-    d.className = 'wizard-dot' + (i === step ? ' active' : i < step ? ' done' : '')
+  // ── Step 1 — auto uppercase ──────────────────
+  ;['f-fn', 'f-from', 'f-to'].forEach(id => {
+    root.querySelector(`#${id}`)?.addEventListener('input', e => {
+      e.target.value = e.target.value.toUpperCase()
+    })
   })
-}
 
-function updateNav(root, step, total, btnPrev, btnNext, btnSave) {
-  btnPrev.style.display = step > 0 ? '' : 'none'
-  btnNext.style.display = step < total - 1 ? '' : 'none'
-  btnSave.style.display = step === total - 1 ? '' : 'none'
-}
-
-// ── Step 1: Route & Date ──────────────────────
-
-function step1Html(form) {
-  return `
-    <div class="wizard-step" data-step="0">
-      <div class="form-group">
-        <label class="form-label">Date (UTC)</label>
-        <input class="form-input mono" id="f-date" type="date" value="${form.date}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Flight Number</label>
-        <input class="form-input mono" id="f-fn" type="text" placeholder="JX761"
-               value="${form.flightNumber}" autocomplete="off" autocorrect="off"
-               autocapitalize="characters">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">FROM</label>
-          <input class="form-input mono" id="f-from" type="text" placeholder="TPE"
-                 value="${form.from}" maxlength="4" autocomplete="off"
-                 autocapitalize="characters">
-        </div>
-        <div class="form-group">
-          <label class="form-label">TO</label>
-          <input class="form-input mono" id="f-to" type="text" placeholder="NRT"
-                 value="${form.to}" maxlength="4" autocomplete="off"
-                 autocapitalize="characters">
-        </div>
-      </div>
-    </div>`
-}
-
-function attachStep1(root, form) {
-  root.querySelector('#f-from')?.addEventListener('input', e => {
-    e.target.value = e.target.value.toUpperCase()
-  })
-  root.querySelector('#f-to')?.addEventListener('input', e => {
-    e.target.value = e.target.value.toUpperCase()
-  })
-  root.querySelector('#f-fn')?.addEventListener('input', e => {
-    e.target.value = e.target.value.toUpperCase()
-  })
-}
-
-// ── Step 2: OOOI Times ────────────────────────
-
-function step2Html(form) {
-  return `
-    <div class="wizard-step" data-step="1">
-      <div class="oooi-grid">
-        ${['OUT','OFF','ON','IN'].map(label => `
-          <div class="oooi-cell">
-            <div class="oooi-label">${label}</div>
-            <input class="form-input mono" id="f-${label.toLowerCase()}"
-                   type="text" inputmode="numeric"
-                   placeholder="HHMM" maxlength="4"
-                   value="${form[label.toLowerCase() + 'Time'] || ''}">
-          </div>`).join('')}
-      </div>
-
-      <div class="form-hint">UTC 時間，4 位數字，例如 0143 = 01:43</div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Block Time</label>
-          <div class="form-computed" id="c-block">—:——</div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Flight Time</label>
-          <div class="form-computed" id="c-flight">—:——</div>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Night Time (auto, 可手動覆蓋)</label>
-        <input class="form-input mono" id="f-night" type="text"
-               inputmode="numeric" placeholder="自動計算" maxlength="4">
-      </div>
-    </div>`
-}
-
-function attachStep2(root, form) {
-  const fields  = ['out','off','on','in']
-  const blockEl = root.querySelector('#c-block')
-  const flightEl= root.querySelector('#c-flight')
-  const nightEl = root.querySelector('#f-night')
+  // ── Step 2 — time calc ───────────────────────
+  const blockVal  = root.querySelector('#c-block')
+  const flightVal = root.querySelector('#c-flight')
+  const nightInp  = root.querySelector('#f-night')
 
   function recalc() {
     const out = root.querySelector('#f-out')?.value
@@ -232,87 +113,52 @@ function attachStep2(root, form) {
     if (isValidHm(out) && isValidHm(inT)) {
       const bt = diffMin(out, inT)
       form.blockTime = bt
-      if (blockEl) blockEl.textContent = `${Math.floor(bt/60)}:${String(bt%60).padStart(2,'0')}`
+      if (blockVal) blockVal.textContent = minHm(bt)
     }
-
     if (isValidHm(off) && isValidHm(on)) {
       const ft = diffMin(off, on)
       form.flightTime = ft
-      if (flightEl) flightEl.textContent = `${Math.floor(ft/60)}:${String(ft%60).padStart(2,'0')}`
+      if (flightVal) flightVal.textContent = minHm(ft)
 
-      // Auto calc night time
-      const date = root.querySelector('#f-date')?.value || form.date
-      const from = root.querySelector('#f-from')?.value || form.from
-      const to   = root.querySelector('#f-to')?.value   || form.to
-
-      if (date && from && to && typeof SunCalc !== 'undefined') {
-        const nt = calcNightTime(date, normalizeHm(off), normalizeHm(on), from, to)
-        form.nightTime = nt
-        if (nightEl && !nightEl.dataset.manualOverride) {
-          nightEl.placeholder = `${Math.floor(nt/60)}:${String(nt%60).padStart(2,'0')} (自動)`
+      if (!nightInp?.dataset.manual) {
+        const date = root.querySelector('#f-date')?.value || form.date
+        const from = root.querySelector('#f-from')?.value || form.from
+        const to   = root.querySelector('#f-to')?.value   || form.to
+        if (date && from && to) {
+          try {
+            const nt = calcNightTime(date, normalizeHm(off), normalizeHm(on), from, to)
+            form.nightTime = nt
+            if (nightInp) nightInp.placeholder = minHm(nt)
+          } catch (_) {}
         }
       }
     }
   }
 
-  fields.forEach(f => {
-    root.querySelector(`#f-${f}`)?.addEventListener('input', recalc)
+  ;['f-out', 'f-off', 'f-on', 'f-in'].forEach(id => {
+    root.querySelector(`#${id}`)?.addEventListener('input', recalc)
+  })
+  nightInp?.addEventListener('input', () => { nightInp.dataset.manual = '1' })
+
+  // ── Step 3 — registration buttons ────────────
+  root.querySelector('#reg-inline')?.addEventListener('click', e => {
+    const btn = e.target.closest('.reg-btn')
+    if (!btn) return
+    root.querySelectorAll('.reg-btn').forEach(b => b.classList.remove('sel'))
+    btn.classList.add('sel')
+    form.registration = btn.dataset.reg
+    form.aircraftType = getTypeByReg(btn.dataset.reg)
+    const el = root.querySelector('#f-type-display')
+    if (el) el.textContent = form.aircraftType || '—'
   })
 
-  nightEl?.addEventListener('input', () => {
-    nightEl.dataset.manualOverride = '1'
-  })
-}
+  // Highlight pre-filled registration
+  if (prefill.registration) {
+    root.querySelector(`.reg-btn[data-reg="${prefill.registration}"]`)
+      ?.classList.add('sel')
+  }
 
-// ── Step 3: Aircraft & Approach ───────────────
-
-function step3Html(form) {
-  const regOpts = ALL_REGISTRATIONS.map(r =>
-    `<option value="${r}" ${r === form.registration ? 'selected' : ''}>${r}</option>`
-  ).join('')
-
-  return `
-    <div class="wizard-step" data-step="2">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Registration</label>
-          <select class="form-select mono" id="f-reg">
-            <option value="">選擇…</option>
-            ${regOpts}
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Aircraft Type</label>
-          <input class="form-input mono" id="f-type" type="text" readonly
-                 value="${form.aircraftType}" placeholder="自動帶入">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Approach Type</label>
-        <div class="approach-grid" id="approach-grid">
-          ${APPROACH_TYPES.map(a => `
-            <button class="approach-btn ${a === form.approachType ? 'selected' : ''}"
-                    data-approach="${a}">${a}</button>`).join('')}
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Landing Runway</label>
-        <input class="form-input mono" id="f-runway" type="text"
-               placeholder="05L" maxlength="4"
-               value="${form.runway}" autocapitalize="characters">
-      </div>
-    </div>`
-}
-
-function attachStep3(root, form) {
-  root.querySelector('#f-reg')?.addEventListener('change', e => {
-    const type = getTypeByReg(e.target.value)
-    root.querySelector('#f-type').value = type
-    form.aircraftType = type
-  })
-
+  // ── Step 3 — approach buttons ─────────────────
   root.querySelector('#approach-grid')?.addEventListener('click', e => {
     const btn = e.target.closest('.approach-btn')
     if (!btn) return
@@ -320,54 +166,8 @@ function attachStep3(root, form) {
     btn.classList.add('selected')
     form.approachType = btn.dataset.approach
   })
-}
 
-// ── Step 4: Piloting & Load ───────────────────
-
-function step4Html(form) {
-  const toggles = [
-    { id: 'pfTakeoff', icon: '↑', label: 'PF\nTakeoff' },
-    { id: 'pfLanding', icon: '↓', label: 'PF\nLanding' },
-    { id: 'pic',       icon: '★', label: 'PIC' },
-    { id: 'autoland',  icon: '⊙', label: 'Autoland' },
-    { id: 'goAround',  icon: '↻', label: 'Go-Around' },
-    { id: 'diverted',  icon: '⚡', label: 'Diverted' },
-  ]
-
-  return `
-    <div class="wizard-step" data-step="3">
-      <div class="toggle-grid">
-        ${toggles.map(t => `
-          <div class="toggle-card ${form[t.id] ? 'on' : ''}" data-toggle="${t.id}">
-            <span class="toggle-card-icon">${t.icon}</span>
-            <span class="toggle-card-label">${t.label.replace('\n','<br>')}</span>
-          </div>`).join('')}
-      </div>
-
-      <div class="form-row-3">
-        <div class="form-group">
-          <label class="form-label">PAX</label>
-          <input class="form-input mono" id="f-pax" type="number"
-                 inputmode="numeric" placeholder="0" min="0"
-                 value="${form.totalPax || ''}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Payload (t)</label>
-          <input class="form-input mono" id="f-payload" type="number"
-                 inputmode="decimal" placeholder="0.0" step="0.1" min="0"
-                 value="${form.totalPayload || ''}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Dist (NM)</label>
-          <input class="form-input mono" id="f-dist" type="number"
-                 inputmode="numeric" placeholder="0" min="0"
-                 value="${form.flightPlanDistance || ''}">
-        </div>
-      </div>
-    </div>`
-}
-
-function attachStep4(root, form) {
+  // ── Step 4 — toggles ─────────────────────────
   root.querySelectorAll('.toggle-card').forEach(card => {
     card.addEventListener('click', () => {
       const key = card.dataset.toggle
@@ -375,124 +175,147 @@ function attachStep4(root, form) {
       card.classList.toggle('on', form[key])
     })
   })
-}
 
-// ── Step 5: Crew ──────────────────────────────
-
-function step5Html(form) {
-  return `
-    <div class="wizard-step" data-step="4">
-      <div class="form-group">
-        <label class="form-label">Crew（最多 4 位）</label>
-        <div class="crew-search-wrap">
-          <input class="form-input" id="f-crew-search" type="text"
-                 placeholder="輸入名字搜尋…" autocomplete="off">
-          <div class="crew-list hidden" id="crew-dropdown"></div>
-        </div>
-      </div>
-      <div class="crew-selected-list" id="crew-selected"></div>
-
-      <div class="form-hint" style="margin-top:8px">
-        若同事不在清單中，可在「Settings → Crew」新增
-      </div>
-    </div>`
-}
-
-function attachStep5(root, form) {
-  const searchEl   = root.querySelector('#f-crew-search')
-  const dropdownEl = root.querySelector('#crew-dropdown')
-  const selectedEl = root.querySelector('#crew-selected')
-
-  renderSelectedCrew(root, form, selectedEl)
-
-  searchEl?.addEventListener('input', e => {
-    const q = e.target.value.trim().toLowerCase()
-    if (!q) { dropdownEl.classList.add('hidden'); return }
-
-    const crew  = state.crew || []
-    const results = crew.filter(c =>
-      `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) &&
-      !form.crew.includes(c.id)
-    ).slice(0, 8)
-
-    if (results.length === 0) { dropdownEl.classList.add('hidden'); return }
-
-    dropdownEl.classList.remove('hidden')
-    dropdownEl.innerHTML = results.map(c => `
-      <div class="crew-option" data-id="${c.id}" data-name="${c.firstName} ${c.lastName}">
-        <span>${c.firstName} ${c.lastName}</span>
-        <span class="text-dim" style="font-size:12px">${c.position || ''}</span>
-      </div>`).join('')
-
-    dropdownEl.querySelectorAll('.crew-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        if (form.crew.length >= 4) { showToast('最多選 4 位', 'error'); return }
-        form.crew.push(opt.dataset.id)
-        form.crewNames.push(opt.dataset.name)
-        dropdownEl.classList.add('hidden')
-        searchEl.value = ''
-        renderSelectedCrew(root, form, selectedEl)
-      })
+  // ── Step 5 — crew slots ───────────────────────
+  root.querySelectorAll('.crew-slot').forEach((slot, idx) => {
+    slot.addEventListener('click', () => {
+      activeSlotIdx = idx
+      openSheet(sheetEl, sheetSearch, sheetList, crewSlots, idx)
     })
   })
-}
 
-function renderSelectedCrew(root, form, el) {
-  if (!el) return
-  el.innerHTML = form.crewNames.map((name, i) => `
-    <div class="crew-selected-item">
-      <span>${name}</span>
-      <button class="btn-remove-crew" data-idx="${i}">✕</button>
-    </div>`).join('')
+  root.querySelector('#sheet-close')?.addEventListener('click', () => closeSheet(sheetEl))
+  sheetEl?.addEventListener('click', e => { if (e.target === sheetEl) closeSheet(sheetEl) })
 
-  el.querySelectorAll('.btn-remove-crew').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.idx, 10)
-      form.crew.splice(idx, 1)
-      form.crewNames.splice(idx, 1)
-      renderSelectedCrew(root, form, el)
-    })
+  sheetSearch?.addEventListener('input', () => {
+    renderSheetList(sheetList, crewSlots, activeSlotIdx, sheetSearch.value)
   })
-}
 
-// ── Collect & Validate ─────────────────────────
+  sheetList?.addEventListener('click', e => {
+    const item = e.target.closest('.sheet-crew-item')
+    if (!item) return
+    const id     = item.dataset.id
+    const crew   = state.crew || []
+    const person = crew.find(c => c.id === id)
+    if (!person || activeSlotIdx < 0) return
 
-function collectStep(root, form, step) {
-  if (step === 0) {
-    form.date         = root.querySelector('#f-date')?.value || ''
-    form.flightNumber = root.querySelector('#f-fn')?.value.toUpperCase() || ''
-    form.from         = root.querySelector('#f-from')?.value.toUpperCase() || ''
-    form.to           = root.querySelector('#f-to')?.value.toUpperCase() || ''
-  }
-  if (step === 1) {
-    form.outTime   = normalizeHm(root.querySelector('#f-out')?.value || '')
-    form.offTime   = normalizeHm(root.querySelector('#f-off')?.value || '')
-    form.onTime    = normalizeHm(root.querySelector('#f-on')?.value  || '')
-    form.inTime    = normalizeHm(root.querySelector('#f-in')?.value  || '')
-    const nightRaw = root.querySelector('#f-night')?.value
-    if (nightRaw && isValidHm(nightRaw)) {
-      form.nightTime = diffMin('00:00', normalizeHm(nightRaw))
+    // Toggle: tap same person again → remove from slot
+    if (crewSlots[activeSlotIdx]?.id === id) {
+      crewSlots[activeSlotIdx] = null
+    } else {
+      // Remove from any other slot if already assigned there
+      for (let i = 0; i < crewSlots.length; i++) {
+        if (crewSlots[i]?.id === id) crewSlots[i] = null
+      }
+      crewSlots[activeSlotIdx] = person
     }
+    closeSheet(sheetEl)
+    renderCrewSlots(root, crewSlots)
+  })
+
+  // Initial state
+  updateNav(root, 0, btnBack, btnNext)
+  renderSheetList(sheetList, crewSlots, -1, '')
+}
+
+// ── Sheet ─────────────────────────────────────
+
+function openSheet(sheetEl, searchEl, listEl, crewSlots, slotIdx) {
+  if (!sheetEl) return
+  sheetEl.classList.add('open')
+  if (searchEl) { searchEl.value = ''; setTimeout(() => searchEl.focus(), 100) }
+  renderSheetList(listEl, crewSlots, slotIdx, '')
+}
+
+function closeSheet(sheetEl) {
+  sheetEl?.classList.remove('open')
+}
+
+function renderSheetList(listEl, crewSlots, slotIdx, query) {
+  if (!listEl) return
+  const q      = (query || '').toLowerCase().trim()
+  const crew   = state.crew || []
+  const list   = q ? crew.filter(c =>
+    `${c.firstName} ${c.lastName}`.toLowerCase().includes(q)
+  ) : crew
+
+  if (list.length === 0) {
+    listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-faint);font-size:13px">
+      ${q ? '找不到符合的組員' : '尚無組員資料，請至 Settings → Crew 新增'}
+    </div>`
+    return
   }
-  if (step === 2) {
-    form.registration = root.querySelector('#f-reg')?.value || ''
-    form.runway       = root.querySelector('#f-runway')?.value.toUpperCase() || ''
-  }
-  if (step === 3) {
-    form.totalPax           = parseInt(root.querySelector('#f-pax')?.value || '0', 10)
-    form.totalPayload       = parseFloat(root.querySelector('#f-payload')?.value || '0')
-    form.flightPlanDistance = parseInt(root.querySelector('#f-dist')?.value || '0', 10)
+
+  const currentId = slotIdx >= 0 ? crewSlots[slotIdx]?.id : null
+  listEl.innerHTML = list.map(c => {
+    const initials = initials2(c)
+    const checked  = c.id === currentId
+    return `<div class="sheet-crew-item" data-id="${c.id}">
+      <div class="sci-avatar">${initials}</div>
+      <div class="sci-name">${c.firstName} ${c.lastName}
+        <span style="font-size:11px;color:var(--text-dim);display:block">${c.position || ''}</span>
+      </div>
+      ${checked ? '<span class="sci-check">✓</span>' : ''}
+    </div>`
+  }).join('')
+}
+
+// ── Crew slots display ────────────────────────
+
+function renderCrewSlots(root, crewSlots) {
+  crewSlots.forEach((person, i) => {
+    const slot    = root.querySelector(`.crew-slot[data-slot="${i}"]`)
+    if (!slot) return
+    const avatarEl = slot.querySelector('.crew-avatar')
+    const nameEl   = slot.querySelector('.crew-name-val')
+    if (person) {
+      slot.classList.add('filled')
+      if (avatarEl) avatarEl.textContent = initials2(person)
+      if (nameEl)   nameEl.textContent   = `${person.firstName} ${person.lastName}`
+    } else {
+      slot.classList.remove('filled')
+      if (avatarEl) avatarEl.textContent = String(i + 1)
+      if (nameEl)   nameEl.textContent   = 'Tap to assign'
+    }
+  })
+}
+
+// ── Navigation ────────────────────────────────
+
+function goToStep(root, step, wizSteps) {
+  if (wizSteps) wizSteps.style.transform = `translateX(-${step * 100}%)`
+
+  root.querySelectorAll('.prog-seg').forEach((seg, i) => {
+    seg.className = 'prog-seg' +
+      (i < step ? ' done' : i === step ? ' active' : '')
+  })
+  root.querySelectorAll('.step-lbl').forEach((lbl, i) => {
+    lbl.className = 'step-lbl' +
+      (i < step ? ' done' : i === step ? ' active' : '')
+  })
+}
+
+function updateNav(root, step, btnBack, btnNext) {
+  if (btnBack) btnBack.style.display = step > 0 ? '' : 'none'
+  if (!btnNext) return
+  if (step === TOTAL - 1) {
+    btnNext.textContent = 'SAVE'
+    btnNext.classList.add('save')
+  } else {
+    btnNext.textContent = 'Continue'
+    btnNext.classList.remove('save')
   }
 }
+
+// ── Validate ──────────────────────────────────
 
 function validateStep(root, form, step) {
   if (step === 0) {
-    if (!root.querySelector('#f-date')?.value) {
-      showToast('請填入日期', 'error'); return false
-    }
-    if (!root.querySelector('#f-from')?.value || !root.querySelector('#f-to')?.value) {
-      showToast('請填入出發與目的地機場', 'error'); return false
-    }
+    const date = root.querySelector('#f-date')?.value
+    const from = root.querySelector('#f-from')?.value
+    const to   = root.querySelector('#f-to')?.value
+    if (!date)        { showToast('請填入日期', 'error'); return false }
+    if (!from || !to) { showToast('請填入出發及目的地機場', 'error'); return false }
   }
   if (step === 1) {
     const out = root.querySelector('#f-out')?.value
@@ -504,15 +327,50 @@ function validateStep(root, form, step) {
   return true
 }
 
-// ── Save ─────────────────────────────────────
+// ── Collect ───────────────────────────────────
 
-async function saveFlight(root, form) {
-  const btn = root.querySelector('#btn-save')
+function collectStep(root, form, step) {
+  if (step === 0) {
+    form.date         = root.querySelector('#f-date')?.value || ''
+    form.flightNumber = (root.querySelector('#f-fn')?.value || '').toUpperCase()
+    form.from         = (root.querySelector('#f-from')?.value || '').toUpperCase()
+    form.to           = (root.querySelector('#f-to')?.value || '').toUpperCase()
+  }
+  if (step === 1) {
+    form.outTime  = normalizeHm(root.querySelector('#f-out')?.value || '')
+    form.offTime  = normalizeHm(root.querySelector('#f-off')?.value || '')
+    form.onTime   = normalizeHm(root.querySelector('#f-on')?.value  || '')
+    form.inTime   = normalizeHm(root.querySelector('#f-in')?.value  || '')
+    const nightRaw = root.querySelector('#f-night')?.value
+    if (nightRaw && isValidHm(nightRaw)) {
+      form.nightTime = diffMin('00:00', normalizeHm(nightRaw))
+    }
+  }
+  if (step === 2) {
+    form.runway = (root.querySelector('#f-runway')?.value || '').toUpperCase()
+  }
+  if (step === 3) {
+    form.totalPax           = parseInt(root.querySelector('#f-pax')?.value     || '0', 10)
+    form.totalPayload       = parseFloat(root.querySelector('#f-payload')?.value || '0')
+    form.flightPlanDistance = parseInt(root.querySelector('#f-dist')?.value    || '0', 10)
+  }
+}
+
+// ── Save ──────────────────────────────────────
+
+async function saveFlight(root, form, crewSlots, btn) {
   btn.disabled = true
   btn.textContent = 'Saving…'
 
+  // Collect remaining steps
+  collectStep(root, form, 2)
+  collectStep(root, form, 3)
+
+  // Build crew arrays from slots
+  form.crew      = crewSlots.filter(Boolean).map(c => c.id)
+  form.crewNames = crewSlots.filter(Boolean).map(c => `${c.firstName} ${c.lastName}`)
+
   try {
-    collectStep(root, form, 4)  // collect step 5 data (already done via events)
     await addFlight(state.user.uid, form)
     invalidateStats()
     showToast('✓ 已儲存', 'success')
@@ -520,6 +378,306 @@ async function saveFlight(root, form) {
   } catch (e) {
     showToast(e.message || '儲存失敗', 'error')
     btn.disabled = false
-    btn.textContent = 'Save'
+    btn.textContent = 'SAVE'
+    btn.classList.add('save')
   }
+}
+
+// ── HTML Builders ─────────────────────────────
+
+function buildHTML(form) {
+  return `
+    <div class="page">
+      <div class="topbar">
+        <button class="topbar-action" id="btn-cancel" style="font-size:20px;color:var(--text-dim)">✕</button>
+        <div class="topbar-title" style="font-family:var(--font-mono);font-size:12px;letter-spacing:0.14em">LOG FLIGHT</div>
+        <div style="width:44px"></div>
+      </div>
+
+      <div class="wizard">
+        <div class="wizard-progress">
+          ${[...Array(TOTAL)].map((_, i) =>
+            `<div class="prog-seg ${i === 0 ? 'active' : ''}"></div>`
+          ).join('')}
+        </div>
+
+        <div class="step-labels">
+          ${STEP_LABELS.map((lbl, i) =>
+            `<div class="step-lbl ${i === 0 ? 'active' : ''}">${lbl}</div>`
+          ).join('')}
+        </div>
+
+        <div class="wizard-steps" id="wizard-steps">
+          ${step1Html(form)}
+          ${step2Html(form)}
+          ${step3Html(form)}
+          ${step4Html(form)}
+          ${step5Html()}
+        </div>
+
+        <div class="step-nav">
+          <button class="btn-wiz-back" id="btn-wiz-back" style="display:none">← Back</button>
+          <button class="btn-wiz-next" id="btn-wiz-next">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    ${crewSheetHtml()}
+  `
+}
+
+// ── Step 1: Route ─────────────────────────────
+
+function step1Html(form) {
+  return `
+    <div class="wizard-step" data-step="0">
+      <div class="step-head">
+        <div class="step-num">01 / 05</div>
+        <div class="step-title">Route</div>
+      </div>
+
+      <div class="input-row">
+        <span class="row-icon">📅</span>
+        <div class="row-lbl">
+          Date
+          <div class="row-sub">UTC</div>
+        </div>
+        <input class="date-input" id="f-date" type="date" value="${form.date}">
+      </div>
+
+      <div class="input-row">
+        <span class="row-icon">✈</span>
+        <div class="row-lbl">Flight No.</div>
+        <input class="inline-input" id="f-fn" type="text"
+               placeholder="JX761" value="${form.flightNumber}"
+               autocomplete="off" autocorrect="off" autocapitalize="characters">
+      </div>
+
+      <div class="input-row">
+        <span class="row-icon">🛫</span>
+        <div class="row-lbl">From</div>
+        <input class="inline-input" id="f-from" type="text"
+               placeholder="TPE" value="${form.from}"
+               maxlength="4" autocomplete="off" autocapitalize="characters">
+      </div>
+
+      <div class="input-row">
+        <span class="row-icon">🛬</span>
+        <div class="row-lbl">To</div>
+        <input class="inline-input" id="f-to" type="text"
+               placeholder="NRT" value="${form.to}"
+               maxlength="4" autocomplete="off" autocapitalize="characters">
+      </div>
+    </div>`
+}
+
+// ── Step 2: Times ─────────────────────────────
+
+function step2Html(form) {
+  const cells = [
+    { key: 'out', dot: 'dot-out', label: 'OUT', val: form.outTime },
+    { key: 'off', dot: 'dot-off', label: 'OFF', val: form.offTime },
+    { key: 'on',  dot: 'dot-on',  label: 'ON',  val: form.onTime  },
+    { key: 'in',  dot: 'dot-in',  label: 'IN',  val: form.inTime  },
+  ]
+  return `
+    <div class="wizard-step" data-step="1">
+      <div class="step-head">
+        <div class="step-num">02 / 05</div>
+        <div class="step-title">Times</div>
+      </div>
+
+      <div class="oooi-grid">
+        ${cells.map(o => `
+          <div class="oooi-cell">
+            <div class="oooi-label">
+              <div class="oooi-dot ${o.dot}"></div>
+              ${o.label}
+            </div>
+            <input class="oooi-input" id="f-${o.key}"
+                   type="text" inputmode="numeric"
+                   placeholder="HHMM" maxlength="4"
+                   value="${o.val || ''}">
+          </div>`).join('')}
+      </div>
+
+      <div class="calc-strip">
+        <div class="calc-box">
+          <div class="calc-lbl">Block</div>
+          <div class="calc-val" id="c-block">—:——</div>
+        </div>
+        <div class="calc-box">
+          <div class="calc-lbl">Flight</div>
+          <div class="calc-val" id="c-flight">—:——</div>
+        </div>
+        <div class="calc-box">
+          <div class="calc-lbl">Night</div>
+          <input class="night-input" id="f-night"
+                 type="text" inputmode="numeric"
+                 placeholder="auto" maxlength="4">
+        </div>
+      </div>
+    </div>`
+}
+
+// ── Step 3: Aircraft ──────────────────────────
+
+function step3Html(form) {
+  const regBtns = ALL_REGISTRATIONS.map(r => {
+    const type = getTypeByReg(r)
+    const sel  = r === form.registration ? ' sel' : ''
+    return `<div class="reg-btn${sel}" data-reg="${r}">
+      <div class="reg-reg">${r}</div>
+      <div class="reg-type-label">${type}</div>
+    </div>`
+  }).join('')
+
+  return `
+    <div class="wizard-step" data-step="2">
+      <div class="step-head">
+        <div class="step-num">03 / 05</div>
+        <div class="step-title">Aircraft</div>
+      </div>
+
+      <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Registration</div>
+      <div class="reg-scroll-wrap" style="margin-bottom:14px">
+        <div class="reg-inline" id="reg-inline">${regBtns}</div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--surface);border:1px solid var(--border-med);border-radius:12px;margin-bottom:20px">
+        <span style="font-size:12px;color:var(--text-dim);flex:1;letter-spacing:0.04em">Aircraft Type</span>
+        <span id="f-type-display" style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--text)">${form.aircraftType || '—'}</span>
+      </div>
+
+      <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Approach Type</div>
+      <div class="approach-grid" id="approach-grid" style="margin-bottom:20px">
+        ${APPROACH_TYPES.map(a => `
+          <button class="approach-btn ${a === form.approachType ? 'selected' : ''}"
+                  data-approach="${a}">${a}</button>`).join('')}
+      </div>
+
+      <div class="rwy-wrap">
+        <span class="rwy-label">Landing Runway</span>
+        <input class="rwy-input" id="f-runway" type="text"
+               placeholder="05L" maxlength="4"
+               value="${form.runway}" autocapitalize="characters">
+      </div>
+    </div>`
+}
+
+// ── Step 4: Piloting ──────────────────────────
+
+function step4Html(form) {
+  const toggles = [
+    { id: 'pfTakeoff', icon: '↑', label: 'PF Takeoff' },
+    { id: 'pfLanding', icon: '↓', label: 'PF Landing' },
+    { id: 'pic',       icon: '★', label: 'PIC' },
+    { id: 'autoland',  icon: '⊙', label: 'Autoland' },
+    { id: 'goAround',  icon: '↻', label: 'Go-Around' },
+    { id: 'diverted',  icon: '⚡', label: 'Diverted' },
+  ]
+  return `
+    <div class="wizard-step" data-step="3">
+      <div class="step-head">
+        <div class="step-num">04 / 05</div>
+        <div class="step-title">Piloting</div>
+      </div>
+
+      <div class="toggle-grid">
+        ${toggles.map(t => `
+          <div class="toggle-card ${form[t.id] ? 'on' : ''}" data-toggle="${t.id}">
+            <span class="toggle-card-icon">${t.icon}</span>
+            <span class="toggle-card-label">${t.label}</span>
+          </div>`).join('')}
+      </div>
+
+      <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
+                  color:var(--text-dim);margin:20px 0 8px">Load</div>
+      <div class="num-grid">
+        <div class="num-box">
+          <div class="num-box-lbl">PAX</div>
+          <input class="num-box-input" id="f-pax" type="number"
+                 inputmode="numeric" placeholder="0" min="0"
+                 value="${form.totalPax || ''}">
+          <div class="num-box-unit">passengers</div>
+        </div>
+        <div class="num-box">
+          <div class="num-box-lbl">Payload</div>
+          <input class="num-box-input" id="f-payload" type="number"
+                 inputmode="decimal" placeholder="0.0" step="0.1" min="0"
+                 value="${form.totalPayload || ''}">
+          <div class="num-box-unit">tonnes</div>
+        </div>
+        <div class="num-box" style="grid-column:1/-1">
+          <div class="num-box-lbl">Distance</div>
+          <input class="num-box-input" id="f-dist" type="number"
+                 inputmode="numeric" placeholder="0" min="0"
+                 value="${form.flightPlanDistance || ''}">
+          <div class="num-box-unit">nautical miles</div>
+        </div>
+      </div>
+    </div>`
+}
+
+// ── Step 5: Crew ──────────────────────────────
+
+function step5Html() {
+  return `
+    <div class="wizard-step" data-step="4">
+      <div class="step-head">
+        <div class="step-num">05 / 05</div>
+        <div class="step-title">Crew</div>
+      </div>
+
+      <div class="crew-slots">
+        ${CREW_ROLES.map((role, i) => `
+          <div class="crew-slot" data-slot="${i}">
+            <div class="crew-avatar">${i + 1}</div>
+            <div class="crew-info">
+              <div class="crew-role">${role}</div>
+              <div class="crew-name-val">Tap to assign</div>
+            </div>
+            <span class="crew-chevron">›</span>
+          </div>`).join('')}
+      </div>
+
+      <div style="margin-top:16px;font-size:12px;color:var(--text-faint);text-align:center;line-height:1.5">
+        若同事不在清單中<br>可至 Settings → Crew 新增
+      </div>
+    </div>`
+}
+
+// ── Crew Bottom Sheet ─────────────────────────
+
+function crewSheetHtml() {
+  return `
+    <div class="sheet-overlay" id="crew-sheet">
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-head">
+          <div class="sheet-head-title">Select Crew</div>
+          <button class="sheet-close" id="sheet-close">✕</button>
+        </div>
+        <div class="sheet-search-wrap">
+          <input class="sheet-search-input" id="sheet-search"
+                 type="text" placeholder="Search by name…"
+                 autocomplete="off" autocorrect="off">
+        </div>
+        <div class="sheet-list" id="sheet-list"></div>
+      </div>
+    </div>`
+}
+
+// ── Utils ─────────────────────────────────────
+
+function minHm(min) {
+  if (min == null || isNaN(min)) return '—:——'
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return `${h}:${String(m).padStart(2, '0')}`
+}
+
+function initials2(person) {
+  if (!person) return '?'
+  return `${person.firstName?.[0] || ''}${person.lastName?.[0] || ''}`.toUpperCase() || '?'
 }

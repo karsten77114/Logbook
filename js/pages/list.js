@@ -107,12 +107,12 @@ function computeStats(flights) {
 
 function renderStats(root, s) {
   const cells = [
-    { label: 'Sectors',      value: s.sectors.toLocaleString() },
+    { label: 'Sectors',      value: fmtNum(s.sectors) },
     { label: 'Block',        value: fmtDuration(s.block) },
     { label: 'Flight',       value: fmtDuration(s.flight) },
     { label: 'Night',        value: fmtDuration(s.night) },
-    { label: 'PF T/O',       value: s.pfTo.toLocaleString() },
-    { label: 'PF LDG',       value: s.pfLdg.toLocaleString() },
+    { label: 'PF T/O',       value: fmtNum(s.pfTo) },
+    { label: 'PF LDG',       value: fmtNum(s.pfLdg) },
   ]
   const el = root.querySelector('#stats-header')
   if (!el) return
@@ -232,4 +232,9 @@ function attachSearchFilter(root) {
 // 重置快取（在新增/刪除航班後呼叫）
 export function invalidateStats() {
   _allStats = null
+}
+
+// 千位分隔符（不依賴 locale，避免 iOS 顯示 "3, 181"）
+function fmtNum(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
