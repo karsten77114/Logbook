@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logbook — 資料匯入工具</title>
+  <style>
+    :root {
+      --bg: #080c12; --surface: #111820; --card: #19232f;
+      --border: rgba(255,255,255,0.08); --border-med: rgba(255,255,255,0.14);
+      --accent: #00b4d8; --green: #1ec86a; --amber: #f0a030; --red: #e04040;
+      --text: #d8e8f4; --text-dim: #6888a0;
+      --font-mono: 'B612 Mono', monospace; --font-ui: 'B612', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-ui);
+           min-height: 100vh; padding: 32px 24px; max-width: 640px; margin: 0 auto; }
+    h1 { font-family: var(--font-mono); font-size: 18px; letter-spacing: 0.2em;
+         color: var(--accent); margin-bottom: 8px; }
+    p  { color: var(--text-dim); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border-med);
+            border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    label { display: block; font-size: 11px; font-family: var(--font-mono);
+            letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim);
+            margin-bottom: 8px; }
+    input[type=text], input[type=password] {
+      width: 100%; background: var(--card); border: 1px solid var(--border-med);
+      border-radius: 6px; color: var(--text); font-size: 14px; padding: 10px 14px;
+      outline: none; font-family: var(--font-mono); margin-bottom: 12px; }
+    input:focus { border-color: var(--accent); }
+    .file-drop {
+      border: 2px dashed var(--border-med); border-radius: 10px;
+      padding: 40px; text-align: center; cursor: pointer;
+      color: var(--text-dim); transition: border-color 0.2s; margin-bottom: 16px; }
+    .file-drop.over { border-color: var(--accent); color: var(--accent); }
+    .file-drop input { display: none; }
+    button {
+      background: var(--accent); color: var(--bg); border: none; border-radius: 6px;
+      font-size: 15px; font-weight: 700; padding: 13px 24px; cursor: pointer;
+      width: 100%; margin-bottom: 10px; font-family: var(--font-ui); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.secondary { background: var(--card); color: var(--text-dim);
+                       border: 1px solid var(--border-med); }
+    #log { background: var(--card); border-radius: 8px; padding: 16px;
+           font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+           max-height: 300px; overflow-y: auto; color: var(--text-dim); }
+    .log-ok  { color: var(--green); }
+    .log-err { color: var(--red); }
+    .log-inf { color: var(--accent); }
+    progress {
+      width: 100%; height: 6px; border-radius: 3px;
+      background: var(--card); margin-bottom: 12px; }
+    progress::-webkit-progress-bar { background: var(--card); border-radius: 3px; }
+    progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app":       "https://www.gstatic.com/firebasejs/11.8.1/firebase-app.js",
+      "firebase/auth":      "https://www.gstatic.com/firebasejs/11.8.1/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/11.8.1/firebase-firestore.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <h1>LOGBOOK IMPORT</h1>
+  <p>一次性批次匯入工具 — 將 logbook.json 的 3,181 筆歷史記錄寫入 Firebase Firestore。<br>
+     每筆記錄以 objectId 為文件 ID，重複執行不會重複匯入。</p>
+
+  <!-- Step 1: Firebase config -->
+  <div class="card">
+    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 1 — Firebase 設定</div>
+    <label>API Key</label>
+    <input type="text" id="cfg-apikey" placeholder="AIza…">
+    <label>Project ID</label>
+    <input type="text" id="cfg-projectid" placeholder="pilot-logbook-xxxxx">
+    <label>Auth Domain</label>
+    <input type="text" id="cfg-authdomain" placeholder="pilot-logbook-xxxxx.firebaseapp.com">
+    <button id="btn-connect" class="secondary">連接 Firebase</button>
+    <div id="connect-status" style="font-size:12px;color:var(--text-dim);margin-top:8px"></div>
+  </div>
+
+  <!-- Step 2: Auth -->
+  <div class="card" id="auth-card" style="display:none">
+    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 2 — 登入</div>
+    <p>請先登入你的帳號，確保資料寫入正確的 UID。</p>
+    <button id="btn-login">Google 登入</button>
+    <div id="auth-status" style="font-size:12px;color:var(--text-dim)"></div>
+  </div>
+
+  <!-- Step 3: File -->
+  <div class="card" id="file-card" style="display:none">
+    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 3 — 選擇 logbook.json</div>
+    <div class="file-drop" id="file-drop">
+      <input type="file" id="file-input" accept=".json">
+      <div style="font-size:32px;margin-bottom:8px">📂</div>
+      <div>點擊選擇或拖入 logbook.json</div>
+      <div id="file-name" style="margin-top:8px;color:var(--accent)"></div>
+    </div>
+    <button id="btn-import" disabled>開始匯入</button>
+  </div>
+
+  <!-- Progress -->
+  <div class="card" id="progress-card" style="display:none">
+    <div style="font-size:13px;color:var(--text);margin-bottom:12px;font-weight:700">匯入進度</div>
+    <progress id="progress-bar" value="0" max="100"></progress>
+    <div id="progress-text" style="font-size:12px;color:var(--text-dim);margin-bottom:12px"></div>
+    <div id="log"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp }             from 'firebase/app'
+    import { getAuth, GoogleAuthProvider,
+             signInWithPopup, onAuthStateChanged } from 'firebase/auth'
+    import { getFirestore, collection, doc,
+             writeBatch, serverTimestamp }         from 'firebase/firestore'
+
+    let app, auth, db, uid
+    let jsonData = null
+
+    // ── Connect Firebase ───────────────────────
+    document.getElementById('btn-connect').addEventListener('click', () => {
+      const apiKey     = document.getElementById('cfg-apikey').value.trim()
+      const projectId  = document.getElementById('cfg-projectid').value.trim()
+      const authDomain = document.getElementById('cfg-authdomain').value.trim()
+
+      if (!apiKey || !projectId) {
+        document.getElementById('connect-status').textContent = '請填入 API Key 和 Project ID'
+        return
+      }
+
+      try {
+        app  = initializeApp({ apiKey, authDomain, projectId }, 'import-app')
+        auth = getAuth(app)
+        db   = getFirestore(app)
+        document.getElementById('connect-status').textContent = '✓ 已連接 Firebase'
+        document.getElementById('connect-status').style.color = 'var(--green)'
+        document.getElementById('auth-card').style.display = ''
+
+        onAuthStateChanged(auth, user => {
+          if (user) {
+            uid = user.uid
+            document.getElementById('auth-status').textContent =
+              `✓ 已登入：${user.email} (uid: ${uid})`
+            document.getElementById('auth-status').style.color = 'var(--green)'
+            document.getElementById('file-card').style.display = ''
+          }
+        })
+      } catch (e) {
+        document.getElementById('connect-status').textContent = '連接失敗：' + e.message
+        document.getElementById('connect-status').style.color = 'var(--red)'
+      }
+    })
+
+    // ── Login ──────────────────────────────────
+    document.getElementById('btn-login').addEventListener('click', async () => {
+      try {
+        const provider = new GoogleAuthProvider()
+        await signInWithPopup(auth, provider)
+      } catch (e) {
+        document.getElementById('auth-status').textContent = '登入失敗：' + e.message
+        document.getElementById('auth-status').style.color = 'var(--red)'
+      }
+    })
+
+    // ── File ───────────────────────────────────
+    const fileInput  = document.getElementById('file-input')
+    const fileDrop   = document.getElementById('file-drop')
+    const btnImport  = document.getElementById('btn-import')
+
+    fileDrop.addEventListener('click', () => fileInput.click())
+    fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('over') })
+    fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('over'))
+    fileDrop.addEventListener('drop', e => {
+      e.preventDefault(); fileDrop.classList.remove('over')
+      loadFile(e.dataTransfer.files[0])
+    })
+    fileInput.addEventListener('change', () => loadFile(fileInput.files[0]))
+
+    function loadFile(file) {
+      if (!file) return
+      document.getElementById('file-name').textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`
+      const reader = new FileReader()
+      reader.onload = e => {
+        try {
+          jsonData = JSON.parse(e.target.result)
+          btnImport.disabled = false
+          btnImport.textContent = `開始匯入 ${jsonData.length.toLocaleString()} 筆`
+        } catch {
+          document.getElementById('file-name').textContent = '⚠ JSON 解析失敗'
+          document.getElementById('file-name').style.color = 'var(--red)'
+        }
+      }
+      reader.readAsText(file)
+    }
+
+    // ── Import ─────────────────────────────────
+    btnImport.addEventListener('click', async () => {
+      if (!jsonData || !uid || !db) return
+      btnImport.disabled = true
+      document.getElementById('progress-card').style.display = ''
+
+      const log     = document.getElementById('log')
+      const bar     = document.getElementById('progress-bar')
+      const txt     = document.getElementById('progress-text')
+      const total   = jsonData.length
+      let done      = 0
+      let errors    = 0
+
+      const addLog = (msg, cls='') => {
+        log.innerHTML += `<div class="${cls}">${msg}</div>`
+        log.scrollTop  = log.scrollHeight
+      }
+
+      addLog(`開始匯入 ${total.toLocaleString()} 筆記錄…`, 'log-inf')
+
+      const col = collection(db, 'users', uid, 'flights')
+
+      for (let i = 0; i < total; i += 500) {
+        const chunk = jsonData.slice(i, i + 500)
+        const batch = writeBatch(db)
+
+        for (const f of chunk) {
+          const ref = doc(col, f.objectId)
+          batch.set(ref, {
+            date:               f.date               || '',
+            flightNumber:       f.flightNumber       || '',
+            aircraftType:       f.aircraftType        || '',
+            registration:       f.registration        || '',
+            from:               f.from               || '',
+            to:                 f.to                 || '',
+            outTime:            f.outTime            || '',
+            offTime:            f.offTime            || '',
+            onTime:             f.onTime             || '',
+            inTime:             f.inTime             || '',
+            blockTime:          f.blockTime          || 0,
+            flightTime:         f.flightTime         || 0,
+            nightTime:          f.nightTime          || 0,
+            pfTakeoff:          f.pfTakeoff          ?? false,
+            pfLanding:          f.pfLanding          ?? false,
+            pic:                f.pic                ?? false,
+            autoland:           f.autoland           ?? false,
+            goAround:           f.goAround           ?? false,
+            diverted:           f.diverted           ?? false,
+            approachType:       f.approachType       || '',
+            runway:             f.runway || f.runwayFromNumbers || '',
+            totalPax:           f.totalPax           || 0,
+            totalPayload:       f.totalPayload       || 0,
+            flightPlanDistance: f.flightPlanDistance || 0,
+            crew:               f.crew               || [],
+            crewNames:          f.crewNames          || [],
+            createdAt:          serverTimestamp(),
+            updatedAt:          serverTimestamp(),
+          }, { merge: true })
+        }
+
+        try {
+          await batch.commit()
+          done += chunk.length
+          bar.value = Math.round(done / total * 100)
+          txt.textContent = `${done.toLocaleString()} / ${total.toLocaleString()} (${bar.value}%)`
+          addLog(`✓ Batch ${Math.ceil(i/500)+1} — ${chunk.length} 筆`, 'log-ok')
+        } catch (e) {
+          errors++
+          addLog(`✗ Batch 失敗: ${e.message}`, 'log-err')
+        }
+      }
+
+      addLog(`\n完成！成功 ${done} 筆，失敗 ${errors} 批`, errors ? 'log-err' : 'log-ok')
+      btnImport.disabled  = false
+      btnImport.textContent = '再次匯入（merge mode，不重複）'
+    })
+  </script>
+</body>
+</html>
