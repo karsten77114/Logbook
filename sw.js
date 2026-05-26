@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v1'
+const CACHE = 'logbook-v2'
 const PRECACHE = [
   './',
   './index.html',
@@ -34,11 +34,29 @@ self.addEventListener('activate', e => {
 })
 
 self.addEventListener('fetch', e => {
-  // Network first for Firebase, cache first for app shell
   const url = new URL(e.request.url)
-  if (url.hostname.includes('firebase') || url.hostname.includes('google')) {
-    return // let Firebase handle its own requests
+
+  // Firebase / Google 請求：完全不攔截
+  if (url.hostname.includes('firebase') || url.hostname.includes('google') ||
+      url.hostname.includes('gstatic')) {
+    return
   }
+
+  // JS / CSS 檔案：Network-first（優先取得最新版，失敗才用快取）
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res.ok) {
+          const clone = res.clone()
+          caches.open(CACHE).then(c => c.put(e.request, clone))
+        }
+        return res
+      }).catch(() => caches.match(e.request))
+    )
+    return
+  }
+
+  // 其他資源（HTML、圖片等）：Cache-first
   e.respondWith(
     caches.match(e.request).then(cached => {
       const networkFetch = fetch(e.request).then(res => {
