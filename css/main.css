@@ -1334,7 +1334,7 @@ html, body {
   font-size: 22px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.06em;
 }
 .dash-gt-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 
@@ -1356,7 +1356,7 @@ html, body {
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.06em;
 }
 .dash-stat-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
 
@@ -1423,6 +1423,7 @@ html, body {
   width: 52px;
   text-align: right;
   flex-shrink: 0;
+  letter-spacing: -0.04em;
 }
 
 /* Currency */
@@ -1479,6 +1480,7 @@ html, body {
   font-size: 14px;
   color: var(--accent);
   flex-shrink: 0;
+  letter-spacing: -0.04em;
 }
 
 /* Monthly Hours */
@@ -1559,6 +1561,7 @@ html, body {
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
+  letter-spacing: -0.06em;
 }
 .fleet-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
 
