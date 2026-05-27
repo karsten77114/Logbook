@@ -26,6 +26,21 @@ export const FLEET = {
   'B-58211': { type: 'A321-252NX', airline: '星宇航空', icao24: null },
   'B-58212': { type: 'A321-252NX', airline: '星宇航空', icao24: null },
   'B-58213': { type: 'A321-252NX', airline: '星宇航空', icao24: null },
+
+  // APEX 訓練中心 DA40-NG（單發）
+  'B-88001': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+  'B-88002': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+  'B-88003': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+  'B-88005': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+  'B-88006': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+  'B-88123': { type: 'DA40-NG', airline: 'APEX', icao24: null },
+
+  // APEX 訓練中心 DA42-NG（雙發）
+  'B-89001': { type: 'DA42-NG', airline: 'APEX', icao24: null },
+
+  // APEX 飛行模擬機
+  'T12-FTD-01': { type: 'DA40-NG-FTD', airline: 'APEX', icao24: null },
+  'T12-FTD-02': { type: 'DA42-NG-FTD', airline: 'APEX', icao24: null },
 }
 
 // 依機型取得所有 registration

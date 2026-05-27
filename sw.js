@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v8'
+const CACHE = 'logbook-v9'
 const PRECACHE = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const PRECACHE = [
   './js/utils/time.js',
   './js/utils/nighttime.js',
   './js/data/fleet.js',
+  './tools/import.html',
 ]
 
 // Dev mode：localhost 完全不快取
