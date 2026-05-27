@@ -90,19 +90,20 @@ async function loadStats(root) {
   }
 }
 
+const FTD_REGS = new Set(['T12-FTD-01', 'T12-FTD-02'])
+
 function computeStats(flights) {
-  let block = 0, flight = 0, night = 0, pfTo = 0, pfLdg = 0
+  let block = 0, flight = 0, night = 0, pfTo = 0, pfLdg = 0, sectors = 0
   for (const f of flights) {
+    if (FTD_REGS.has(f.registration)) continue
+    sectors++
     block  += f.blockTime  || 0
     flight += f.flightTime || 0
     night  += f.nightTime  || 0
     if (f.pfTakeoff) pfTo++
     if (f.pfLanding) pfLdg++
   }
-  return {
-    sectors: flights.length,
-    block, flight, night, pfTo, pfLdg,
-  }
+  return { sectors, block, flight, night, pfTo, pfLdg }
 }
 
 function renderStats(root, s) {
