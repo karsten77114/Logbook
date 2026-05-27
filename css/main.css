@@ -1330,11 +1330,11 @@ html, body {
 .dash-airline-name { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .dash-grand-total  { text-align: right; flex-shrink: 0; }
 .dash-gt-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 22px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
 }
 .dash-gt-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 
@@ -1352,11 +1352,11 @@ html, body {
 }
 .dash-stat-icon { font-size: 18px; margin-bottom: 6px; }
 .dash-stat-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
 }
 .dash-stat-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
 
@@ -1417,13 +1417,13 @@ html, body {
   min-width: 4px;
 }
 .act-val {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   color: var(--text);
   width: 52px;
   text-align: right;
   flex-shrink: 0;
-  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Currency */
@@ -1476,11 +1476,12 @@ html, body {
 }
 .recent-fn { font-size: 11px; color: var(--text-dim); }
 .recent-block {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 14px;
+  font-weight: 600;
   color: var(--accent);
   flex-shrink: 0;
-  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Monthly Hours */
@@ -1557,11 +1558,11 @@ html, body {
   gap: 16px;
 }
 .fleet-val {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
 }
 .fleet-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
 
