@@ -1291,6 +1291,277 @@ html, body {
 .mono        { font-family: var(--font-mono); }
 .hidden      { display: none !important; }
 
+/* ══════════════════════════════════════════════
+   Dashboard
+   ══════════════════════════════════════════════ */
+
+/* Hero */
+.dash-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 12px 12px 0;
+}
+.dash-airline-logo {
+  font-size: 28px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.dash-pilot-info { flex: 1; min-width: 0; }
+.dash-pilot-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dash-airline-name { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.dash-grand-total  { text-align: right; flex-shrink: 0; }
+.dash-gt-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.03em;
+}
+.dash-gt-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+/* Stats grid */
+.dash-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.dash-stat-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px 14px 12px;
+}
+.dash-stat-icon { font-size: 18px; margin-bottom: 6px; }
+.dash-stat-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.dash-stat-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+/* Generic card */
+.dash-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px 14px 10px;
+  margin: 8px 12px 0;
+}
+.dash-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+.dash-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.dash-section-header .dash-section-title { margin-bottom: 0; }
+.dash-view-all {
+  font-size: 12px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Recent Activity */
+.act-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.act-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  width: 54px;
+  flex-shrink: 0;
+}
+.act-bar-bg {
+  flex: 1;
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.act-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  border-radius: 3px;
+  min-width: 4px;
+}
+.act-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  width: 52px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Currency */
+.curr-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.curr-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.curr-icon  { font-size: 14px; }
+.curr-type  { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--text-dim); flex: 1; }
+.curr-count { font-family: var(--font-mono); font-size: 13px; font-weight: 700; }
+.curr-item  {
+  font-size: 12px;
+  color: var(--text);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+.curr-expiry {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* Recent Flights */
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.recent-row:last-child { border-bottom: none; }
+.recent-row:active { background: var(--card-hover); border-radius: 6px; }
+.recent-date  { font-size: 12px; color: var(--text-dim); width: 50px; flex-shrink: 0; }
+.recent-route { flex: 1; min-width: 0; }
+.recent-airports {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  display: block;
+}
+.recent-fn { font-size: 11px; color: var(--text-dim); }
+.recent-block {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Monthly Hours */
+.month-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  padding-top: 20px;
+}
+.month-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  position: relative;
+}
+.month-val {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.month-col.current .month-val { color: var(--accent); }
+.month-bar-wrap {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.month-bar {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 4px 4px 0 0;
+  min-height: 4px;
+  transition: height 0.4s ease;
+}
+.month-col.current .month-bar {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+}
+.month-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 5px;
+}
+.month-col.current .month-label { color: var(--accent); font-weight: 700; }
+
+/* Fleet */
+.fleet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fleet-card {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.fleet-type {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+  letter-spacing: -0.02em;
+}
+.fleet-stats {
+  display: flex;
+  gap: 16px;
+}
+.fleet-val {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.fleet-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+
 /* ── iPad / 桌面佈局 ──────────────────────────── */
 @media (min-width: 768px) {
   .stats-header  { grid-template-columns: repeat(6, 1fr); }

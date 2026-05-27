@@ -8,6 +8,7 @@ import { state, setUser,
          setProfile, setCrew }   from './state.js'
 import { getProfile, getCrew }   from './db.js'
 import { renderLogin }           from './pages/login.js'
+import { renderDashboard }       from './pages/dashboard.js'
 import { renderList }            from './pages/list.js'
 import { renderAdd }             from './pages/add.js'
 import { renderDetail }          from './pages/detail.js'
@@ -45,7 +46,7 @@ async function init() {
       // Route to list (or whatever hash says)
       const page = currentPage()
       if (!page || page === 'login') {
-        navigate('list')
+        navigate('dashboard')
       } else {
         router()
       }
@@ -88,11 +89,12 @@ function router() {
   hideSplash()
 
   switch (page) {
-    case 'add':      renderAdd(root, params);      break
-    case 'detail':   renderDetail(root, params);   break
-    case 'settings': renderSettings(root, params); break
-    case 'list':
-    default:         renderList(root, params);     break
+    case 'add':       renderAdd(root, params);       break
+    case 'detail':    renderDetail(root, params);    break
+    case 'settings':  renderSettings(root, params);  break
+    case 'list':      renderList(root, params);      break
+    case 'dashboard':
+    default:          renderDashboard(root, params); break
   }
 }
 

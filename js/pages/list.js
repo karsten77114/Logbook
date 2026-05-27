@@ -55,23 +55,26 @@ function buildShell() {
 
 function bottomNav(active) {
   const items = [
-    { id: 'list',     icon: '≡', label: 'Logbook' },
-    { id: 'settings', icon: '⚙', label: 'Settings' },
+    { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
+    { id: 'list',      icon: '≡', label: 'Flights'   },
+    { id: '_add',      icon: '＋', label: 'Add'       },
+    { id: 'settings',  icon: '⚙', label: 'Settings'  },
   ]
   return `
     <nav class="bottom-nav">
       ${items.map(i => `
-        <button class="nav-item ${i.id === active ? 'active' : ''}" data-nav="${i.id}">
+        <button class="nav-item ${i.id === active ? 'active' : ''}"
+                data-nav="${i.id}" style="${i.id==='_add'?'font-size:22px':''}">
           <span class="nav-icon">${i.icon}</span>
           <span>${i.label}</span>
         </button>`).join('')}
-    </nav>
-  `
+    </nav>`
 }
 
 function attachNav(root) {
   root.querySelectorAll('[data-nav]').forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.nav))
+    const target = btn.dataset.nav
+    btn.addEventListener('click', () => navigate(target === '_add' ? 'add' : target))
   })
   root.querySelector('#fab-add')?.addEventListener('click', () => navigate('add'))
 }

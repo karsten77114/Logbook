@@ -27,8 +27,14 @@ function buildShell() {
       </div>
 
       <nav class="bottom-nav">
+        <button class="nav-item" data-nav="dashboard">
+          <span class="nav-icon">⊞</span><span>Dashboard</span>
+        </button>
         <button class="nav-item" data-nav="list">
-          <span class="nav-icon">≡</span><span>Logbook</span>
+          <span class="nav-icon">≡</span><span>Flights</span>
+        </button>
+        <button class="nav-item" data-nav="add">
+          <span class="nav-icon" style="font-size:22px">＋</span><span>Add</span>
         </button>
         <button class="nav-item active" data-nav="settings">
           <span class="nav-icon">⚙</span><span>Settings</span>
