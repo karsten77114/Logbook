@@ -218,29 +218,29 @@ async function tryFetchTrack(root, f) {
   if (icao24) {
     doFetch(icao24)
   } else {
-    // No ICAO24 available — show manual input
-    wrap.innerHTML = `
-      <div style="padding:16px;text-align:center">
-        <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">
-          需要 ICAO24 Hex Code 才能查詢 OpenSky 軌跡
-        </div>
-        <div style="display:flex;gap:8px;max-width:260px;margin:0 auto">
-          <input id="icao24-in" type="text" placeholder="e.g. 899abc"
-            style="flex:1;background:var(--card);border:1px solid var(--border-med);
-                   border-radius:6px;color:var(--text);font-size:13px;padding:8px 10px;
-                   font-family:var(--font-mono);outline:none;text-transform:lowercase">
-          <button id="icao24-go"
-            style="background:var(--accent);color:var(--bg);border:none;border-radius:6px;
-                   padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer">GO</button>
-        </div>
-        <div style="color:var(--text-faint);font-size:11px;margin-top:8px">
-          可至 opensky-network.org 或 ADS-B Exchange 查詢機號對應的 hex code
-        </div>
-      </div>`
-    root.querySelector('#icao24-go')?.addEventListener('click', () => {
-      const ic = root.querySelector('#icao24-in')?.value.trim().toLowerCase()
-      if (ic.length >= 6) doFetch(ic)
-    })
+    // 自動查詢 hexdb.io 取得 ICAO24
+    wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
+      ⏳ 查詢機號資料中…
+    </div>`
+    try {
+      const hexResp = await fetch(
+        `https://hexdb.io/reg-hex?reg=${encodeURIComponent(f.registration)}`,
+        { signal: AbortSignal.timeout(8000) }
+      )
+      if (hexResp.ok) {
+        const hexData = await hexResp.json()
+        const lookedUp = (hexData.ModeS || hexData.icao24 || '').toLowerCase().trim()
+        if (lookedUp.length >= 6) {
+          doFetch(lookedUp)
+          return
+        }
+      }
+    } catch (_) {}
+    // hexdb.io 查無資料
+    wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
+      查無此機號的 ICAO24 資料<br>
+      <span style="color:var(--text-faint);font-size:11px">${f.registration}</span>
+    </div>`
   }
 }
 

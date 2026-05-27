@@ -128,7 +128,7 @@ export function renderAdd(root) {
           try {
             const nt = calcNightTime(date, normalizeHm(off), normalizeHm(on), from, to)
             form.nightTime = nt
-            if (nightInp) nightInp.placeholder = minHm(nt)
+            if (nightInp && !nightInp.dataset.manual) nightInp.value = minHm(nt)
           } catch (_) {}
         }
       }
