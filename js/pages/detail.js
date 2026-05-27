@@ -7,6 +7,7 @@ import { navigate, showToast }                    from '../app.js'
 import { invalidateStats }                        from './list.js'
 import { fmtDate, fmtDuration }                   from '../utils/time.js'
 import { fetchTrack, getTimeRange }               from '../utils/opensky.js'
+import { FLEET }                                  from '../data/fleet.js'
 
 export async function renderDetail(root, params) {
   const flightId = params[0]
@@ -175,13 +176,72 @@ async function tryFetchTrack(root, f) {
   const wrap = root.querySelector('#track-map-wrap')
   if (!wrap) return
 
-  // OpenSky requires icao24 which we may not have in local data
-  // Show placeholder message
-  wrap.innerHTML = `
-    <div style="color:var(--text-faint);font-size:12px;text-align:center;padding:20px">
-      軌跡資料需設定 ICAO24 hex code<br>
-      <span style="color:var(--text-dim)">在 Settings → Aircraft 中設定後可自動獲取</span>
+  // Ground ops: no real airborne time — skip
+  if (f.flightTime === 0 && f.offTime === '00:00' && f.onTime === '00:00') {
+    wrap.innerHTML = `<div style="color:var(--text-faint);font-size:12px;text-align:center;padding:20px">
+      地面操作，無飛行軌跡
     </div>`
+    return
+  }
+
+  // Resolve ICAO24 from flight record or fleet lookup
+  const icao24 = (f.icao24 || FLEET[f.registration]?.icao24 || '').trim().toLowerCase()
+
+  const doFetch = async (ic) => {
+    wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
+      ⏳ 查詢 OpenSky 軌跡中…
+    </div>`
+
+    const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
+
+    // OpenSky free tier retains only 30 days of history
+    if ((Date.now() / 1000 - begin) > 30 * 86400) {
+      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
+        歷史資料超過 30 天<br>
+        <span style="color:var(--text-faint);font-size:11px">OpenSky 免費 API 僅保留近 30 天軌跡</span>
+      </div>`
+      return
+    }
+
+    const track = await fetchTrack(ic, midpoint)
+    if (track?.length) {
+      renderMap(root, track)
+      renderCharts(root, track)
+    } else {
+      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
+        查無軌跡資料<br>
+        <span style="color:var(--text-faint);font-size:11px">ICAO24: ${ic}</span>
+      </div>`
+    }
+  }
+
+  if (icao24) {
+    doFetch(icao24)
+  } else {
+    // No ICAO24 available — show manual input
+    wrap.innerHTML = `
+      <div style="padding:16px;text-align:center">
+        <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">
+          需要 ICAO24 Hex Code 才能查詢 OpenSky 軌跡
+        </div>
+        <div style="display:flex;gap:8px;max-width:260px;margin:0 auto">
+          <input id="icao24-in" type="text" placeholder="e.g. 899abc"
+            style="flex:1;background:var(--card);border:1px solid var(--border-med);
+                   border-radius:6px;color:var(--text);font-size:13px;padding:8px 10px;
+                   font-family:var(--font-mono);outline:none;text-transform:lowercase">
+          <button id="icao24-go"
+            style="background:var(--accent);color:var(--bg);border:none;border-radius:6px;
+                   padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer">GO</button>
+        </div>
+        <div style="color:var(--text-faint);font-size:11px;margin-top:8px">
+          可至 opensky-network.org 或 ADS-B Exchange 查詢機號對應的 hex code
+        </div>
+      </div>`
+    root.querySelector('#icao24-go')?.addEventListener('click', () => {
+      const ic = root.querySelector('#icao24-in')?.value.trim().toLowerCase()
+      if (ic.length >= 6) doFetch(ic)
+    })
+  }
 }
 
 function renderMap(root, track) {
