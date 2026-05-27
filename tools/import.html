@@ -137,6 +137,14 @@
       </div>
       <button id="btn-import">開始匯入（航班 + 機師）</button>
     </div>
+
+    <!-- 獨立操作：從現有航班同步 Crew -->
+    <hr style="border-color:var(--border);margin:20px 0">
+    <div class="card-title" style="margin-bottom:12px">快速修復</div>
+    <button id="btn-sync-crew" class="secondary">
+      ⚡ 從現有航班同步機師名單
+    </button>
+    <div id="sync-crew-status" style="font-size:12px;color:var(--text-dim);margin-top:8px"></div>
   </div>
 
   <!-- Progress -->
@@ -393,6 +401,69 @@
 
       document.getElementById('btn-import').disabled  = false
       document.getElementById('btn-import').textContent = '再次執行（merge mode，不重複）'
+    })
+
+    // ── 從現有航班同步 Crew ────────────────────────
+    document.getElementById('btn-sync-crew')?.addEventListener('click', async () => {
+      if (!uid || !db) {
+        setStatus('sync-crew-status', '請先完成 Firebase 連線與登入', 'red')
+        return
+      }
+      const btn = document.getElementById('btn-sync-crew')
+      const statusEl = document.getElementById('sync-crew-status')
+      btn.disabled = true
+      btn.textContent = '讀取中…'
+      statusEl.textContent = '正在讀取所有航班記錄…'
+      statusEl.style.color = 'var(--text-dim)'
+
+      try {
+        // 讀取所有航班
+        const flightsSnap = await getDocs(collection(db, 'users', uid, 'flights'))
+        const allFlights   = flightsSnap.docs.map(d => d.data())
+
+        // 提取唯一 crew（依 crew ID）
+        const crewMap = {}
+        for (const f of allFlights) {
+          const ids   = f.crew      || []
+          const names = f.crewNames || []
+          for (let i = 0; i < ids.length; i++) {
+            const id = ids[i]
+            if (!id || crewMap[id]) continue
+            const name  = (names[i] || '').trim()
+            const parts = name.split(/\s+/).filter(Boolean)
+            const last  = parts.length > 1 ? parts[parts.length - 1] : ''
+            const first = parts.slice(0, -1).join(' ')
+            crewMap[id] = { firstName: first || name, lastName: last, position: '' }
+          }
+        }
+
+        const crewList   = Object.entries(crewMap)
+        const crewCol    = collection(db, 'users', uid, 'crew')
+        let written = 0, errors = 0
+
+        statusEl.textContent = `找到 ${crewList.length} 位機師，寫入中…`
+
+        for (const [crewId, data] of crewList) {
+          try {
+            await setDoc(doc(crewCol, crewId), data, { merge: true })
+            written++
+          } catch (e) {
+            errors++
+          }
+        }
+
+        btn.disabled    = false
+        btn.textContent = '⚡ 從現有航班同步機師名單'
+        statusEl.textContent = errors
+          ? `完成：${written} 位成功，${errors} 位失敗`
+          : `✓ 已同步 ${written} 位機師！重新整理 App 即可看到。`
+        statusEl.style.color = errors ? 'var(--amber)' : 'var(--green)'
+      } catch (e) {
+        btn.disabled    = false
+        btn.textContent = '⚡ 從現有航班同步機師名單'
+        statusEl.textContent = '失敗：' + e.message
+        statusEl.style.color = 'var(--red)'
+      }
     })
 
     // ── 工具函數 ───────────────────────────────────
