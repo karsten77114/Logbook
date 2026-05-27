@@ -4,6 +4,7 @@
 
 export const FLEET = {
   // 華信航空 ATR72-600
+  'B-16851': { type: 'ATR72-600', airline: '華信航空', icao24: null },
   'B-16852': { type: 'ATR72-600', airline: '華信航空', icao24: null },
   'B-16853': { type: 'ATR72-600', airline: '華信航空', icao24: null },
   'B-16854': { type: 'ATR72-600', airline: '華信航空', icao24: null },
@@ -11,6 +12,8 @@ export const FLEET = {
   'B-16856': { type: 'ATR72-600', airline: '華信航空', icao24: null },
   'B-16857': { type: 'ATR72-600', airline: '華信航空', icao24: null },
   'B-16858': { type: 'ATR72-600', airline: '華信航空', icao24: null },
+  'B-16859': { type: 'ATR72-600', airline: '華信航空', icao24: null },
+  'B-16860': { type: 'ATR72-600', airline: '華信航空', icao24: null },
 
   // 星宇航空 A321-252NX
   'B-58201': { type: 'A321-252NX', airline: '星宇航空', icao24: null },
