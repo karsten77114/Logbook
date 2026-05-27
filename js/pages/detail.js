@@ -228,9 +228,8 @@ async function tryFetchTrack(root, f) {
         { signal: AbortSignal.timeout(8000) }
       )
       if (hexResp.ok) {
-        const hexData = await hexResp.json()
-        const lookedUp = (hexData.ModeS || hexData.icao24 || '').toLowerCase().trim()
-        if (lookedUp.length >= 6) {
+        const lookedUp = (await hexResp.text()).trim().toLowerCase()
+        if (/^[0-9a-f]{6}$/.test(lookedUp)) {
           doFetch(lookedUp)
           return
         }
