@@ -21,6 +21,13 @@ async function init() {
   // Register service worker
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {})
+    // 新版 SW 接管後收到通知 → 強制重載以載入最新程式碼
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data?.type === 'SW_UPDATED') {
+        console.log('[App] SW updated to', event.data.version, '— reloading…')
+        setTimeout(() => window.location.reload(), 1500)
+      }
+    })
   }
 
   // Init Firebase

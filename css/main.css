@@ -483,11 +483,15 @@ html, body {
   min-height: 0;
   overflow: hidden;
   position: relative;
+  /* iOS Safari fix: 強制合成層，確保 overflow:hidden clip 子層 will-change:transform */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 /* slider 層：橫向排列所有步驟，transform 在這 */
 .wizard-steps {
   display: flex;
+  width: 100%;        /* 必須！讓 translateX(-100%) = port 寬度 */
   height: 100%;
   transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
   will-change: transform;
@@ -495,8 +499,11 @@ html, body {
 
 .wizard-step {
   min-width: 100%;
+  max-width: 100%;           /* 防止內容撐寬超出 port */
+  width: 100%;               /* flex item 明確寬度 */
   height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;        /* 不讓橫向內容外洩 */
   -webkit-overflow-scrolling: touch;
   padding: 4px 20px 32px;
   flex-shrink: 0;
@@ -544,6 +551,25 @@ html, body {
 }
 .inline-input::placeholder { color: var(--text-faint); font-weight: 400; font-size: 16px; }
 .inline-input:focus { color: var(--accent); }
+
+/* Select 下拉選單（與 inline-input 同風格，iOS native picker）*/
+.inline-select {
+  background: transparent;
+  border: none; outline: none;
+  font-family: var(--font-mono);
+  font-size: 16px; font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+  text-align: right;
+  max-width: 180px;
+  padding: 0 4px 0 0;
+}
+.inline-select:focus { color: var(--accent); }
+.inline-select option { color: var(--text); background: var(--surface); }
+
 .date-input {
   background: transparent;
   border: none; outline: none;
@@ -635,65 +661,7 @@ html, body {
 }
 .night-input::placeholder { color: var(--text-faint); font-size: 17px; font-weight: 400; }
 
-/* Step 3 Aircraft */
-.reg-scroll-wrap {
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin: 0 -20px;
-  padding: 0 20px;
-}
-.reg-scroll-wrap::-webkit-scrollbar { display: none; }
-.reg-inline {
-  display: flex; gap: 8px;
-  width: max-content;
-  padding-bottom: 4px;
-}
-.reg-btn {
-  background: var(--surface);
-  border: 1px solid var(--border-med);
-  border-radius: 10px;
-  padding: 10px 12px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-.reg-btn.sel {
-  background: rgba(0,180,216,0.12);
-  border-color: var(--accent);
-}
-.reg-reg {
-  font-family: var(--font-mono);
-  font-size: 13px; font-weight: 700;
-  color: var(--text);
-}
-.reg-type-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
-.reg-btn.sel .reg-reg { color: var(--accent); }
-
-/* Approach grid (5列) */
-.approach-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin: 4px 0 16px;
-}
-.approach-btn {
-  background: var(--surface);
-  border: 1px solid var(--border-med);
-  border-radius: 10px;
-  padding: 13px 4px;
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 12px; font-weight: 600;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.approach-btn.selected {
-  background: rgba(0,180,216,0.15);
-  border-color: var(--accent);
-  color: var(--accent);
-}
+/* Step 3 Aircraft — Registration/Approach 改用 inline-select 下拉選單 */
 
 /* Runway */
 .rwy-wrap {
@@ -1323,12 +1291,15 @@ html, body {
 .mono        { font-family: var(--font-mono); }
 .hidden      { display: none !important; }
 
-/* ── iPad layout ─────────────────────────────── */
+/* ── iPad / 桌面佈局 ──────────────────────────── */
 @media (min-width: 768px) {
-  .stats-header { grid-template-columns: repeat(6, 1fr); }
-  .wizard-step { max-width: 600px; margin: 0 auto; width: 100%; }
-  .approach-grid { grid-template-columns: repeat(5, 1fr); }
-  .toggle-grid { grid-template-columns: repeat(3, 1fr); }
-  .login-page { max-width: 400px; margin: 0 auto; }
-  .detail-cards { max-width: 720px; margin: 0 auto; }
+  .stats-header  { grid-template-columns: repeat(6, 1fr); }
+  /* wizard-steps-port 限寬居中，整個 slider 系統在 640px 內，各步仍 min-width:100% */
+  .wizard-steps-port { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .step-labels   { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .wizard-progress { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .step-nav      { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .toggle-grid   { grid-template-columns: repeat(3, 1fr); }
+  .login-page    { max-width: 400px; margin: 0 auto; }
+  .detail-cards  { max-width: 720px; margin: 0 auto; }
 }

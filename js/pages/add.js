@@ -140,31 +140,17 @@ export function renderAdd(root) {
   })
   nightInp?.addEventListener('input', () => { nightInp.dataset.manual = '1' })
 
-  // ── Step 3 — registration buttons ────────────
-  root.querySelector('#reg-inline')?.addEventListener('click', e => {
-    const btn = e.target.closest('.reg-btn')
-    if (!btn) return
-    root.querySelectorAll('.reg-btn').forEach(b => b.classList.remove('sel'))
-    btn.classList.add('sel')
-    form.registration = btn.dataset.reg
-    form.aircraftType = getTypeByReg(btn.dataset.reg)
+  // ── Step 3 — registration select ─────────────
+  root.querySelector('#f-reg')?.addEventListener('change', e => {
+    form.registration = e.target.value
+    form.aircraftType = getTypeByReg(e.target.value)
     const el = root.querySelector('#f-type-display')
     if (el) el.textContent = form.aircraftType || '—'
   })
 
-  // Highlight pre-filled registration
-  if (prefill.registration) {
-    root.querySelector(`.reg-btn[data-reg="${prefill.registration}"]`)
-      ?.classList.add('sel')
-  }
-
-  // ── Step 3 — approach buttons ─────────────────
-  root.querySelector('#approach-grid')?.addEventListener('click', e => {
-    const btn = e.target.closest('.approach-btn')
-    if (!btn) return
-    root.querySelectorAll('.approach-btn').forEach(b => b.classList.remove('selected'))
-    btn.classList.add('selected')
-    form.approachType = btn.dataset.approach
+  // ── Step 3 — approach select ──────────────────
+  root.querySelector('#f-approach')?.addEventListener('change', e => {
+    form.approachType = e.target.value
   })
 
   // ── Step 4 — toggles ─────────────────────────
@@ -357,7 +343,10 @@ function collectStep(root, form, step) {
     }
   }
   if (step === 2) {
-    form.runway = (root.querySelector('#f-runway')?.value || '').toUpperCase()
+    form.registration = root.querySelector('#f-reg')?.value || form.registration
+    form.aircraftType = getTypeByReg(form.registration) || form.aircraftType
+    form.approachType = root.querySelector('#f-approach')?.value || ''
+    form.runway       = (root.querySelector('#f-runway')?.value || '').toUpperCase()
   }
   if (step === 3) {
     form.totalPax           = parseInt(root.querySelector('#f-pax')?.value     || '0', 10)
@@ -535,13 +524,15 @@ function step2Html(form) {
 // ── Step 3: Aircraft ──────────────────────────
 
 function step3Html(form) {
-  const regBtns = ALL_REGISTRATIONS.map(r => {
+  const regOptions = ALL_REGISTRATIONS.map(r => {
     const type = getTypeByReg(r)
-    const sel  = r === form.registration ? ' sel' : ''
-    return `<div class="reg-btn${sel}" data-reg="${r}">
-      <div class="reg-reg">${r}</div>
-      <div class="reg-type-label">${type}</div>
-    </div>`
+    const sel  = r === form.registration ? ' selected' : ''
+    return `<option value="${r}"${sel}>${r} — ${type}</option>`
+  }).join('')
+
+  const approachOptions = APPROACH_TYPES.map(a => {
+    const sel = a === form.approachType ? ' selected' : ''
+    return `<option value="${a}"${sel}>${a}</option>`
   }).join('')
 
   return `
@@ -551,28 +542,37 @@ function step3Html(form) {
         <div class="step-title">Aircraft</div>
       </div>
 
-      <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Registration</div>
-      <div class="reg-scroll-wrap" style="margin-bottom:14px">
-        <div class="reg-inline" id="reg-inline">${regBtns}</div>
+      <div class="input-row">
+        <span class="row-icon">🪪</span>
+        <div class="row-lbl">Registration</div>
+        <select class="inline-select" id="f-reg">
+          <option value="">—</option>
+          ${regOptions}
+        </select>
       </div>
 
-      <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--surface);border:1px solid var(--border-med);border-radius:12px;margin-bottom:20px">
-        <span style="font-size:12px;color:var(--text-dim);flex:1;letter-spacing:0.04em">Aircraft Type</span>
-        <span id="f-type-display" style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--text)">${form.aircraftType || '—'}</span>
+      <div class="input-row">
+        <span class="row-icon">🛩</span>
+        <div class="row-lbl">Type</div>
+        <span id="f-type-display" style="font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--text)">${form.aircraftType || '—'}</span>
       </div>
 
-      <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px">Approach Type</div>
-      <div class="approach-grid" id="approach-grid" style="margin-bottom:20px">
-        ${APPROACH_TYPES.map(a => `
-          <button class="approach-btn ${a === form.approachType ? 'selected' : ''}"
-                  data-approach="${a}">${a}</button>`).join('')}
+      <div class="input-row">
+        <span class="row-icon">🛬</span>
+        <div class="row-lbl">Approach</div>
+        <select class="inline-select" id="f-approach">
+          <option value="">—</option>
+          ${approachOptions}
+        </select>
       </div>
 
-      <div class="rwy-wrap">
-        <span class="rwy-label">Landing Runway</span>
-        <input class="rwy-input" id="f-runway" type="text"
+      <div class="input-row">
+        <span class="row-icon">🏁</span>
+        <div class="row-lbl">Runway</div>
+        <input class="inline-input" id="f-runway" type="text"
                placeholder="05L" maxlength="4"
-               value="${form.runway}" autocapitalize="characters">
+               value="${form.runway}" autocapitalize="characters"
+               autocomplete="off">
       </div>
     </div>`
 }
