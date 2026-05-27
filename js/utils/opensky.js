@@ -3,7 +3,8 @@
 // 免費 API，歷史軌跡保留 30 天，有 rate limit
 // ══════════════════════════════════════════════
 
-const BASE = 'https://opensky-network.org/api'
+// Cloudflare Worker proxy，繞過 OpenSky CORS 限制
+const PROXY_BASE = 'https://jx-briefing.karsten77114.workers.dev'
 
 /**
  * 查詢飛行軌跡
@@ -14,7 +15,7 @@ const BASE = 'https://opensky-network.org/api'
 export async function fetchTrack(icao24, timeUnix) {
   if (!icao24) return null
   try {
-    const url = `${BASE}/tracks/all?icao24=${icao24.toLowerCase()}&time=${timeUnix}`
+    const url = `${PROXY_BASE}/api/track?icao24=${icao24.toLowerCase()}&time=${timeUnix}`
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
     if (!res.ok) return null
     const data = await res.json()
