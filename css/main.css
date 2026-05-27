@@ -1501,7 +1501,7 @@ html, body {
   position: relative;
 }
 .month-val {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 9px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -1509,6 +1509,7 @@ html, body {
   top: -18px;
   left: 50%;
   transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
 }
 .month-col.current .month-val { color: var(--accent); }
 .month-bar-wrap {
