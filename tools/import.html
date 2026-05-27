@@ -147,6 +147,38 @@
     <div id="sync-crew-status" style="font-size:12px;color:var(--text-dim);margin-top:8px"></div>
   </div>
 
+  <!-- Step 4: 匯入完整機師名單 JSON -->
+  <div class="card" id="crew-card" style="display:none">
+    <div class="card-title">Step 4（選用）— 匯入完整機師名單</div>
+    <p>從 LogATP 匯出的 crew_import.json，包含正確職位、員工編號、執照號碼、國籍。</p>
+    <div class="file-drop" id="crew-drop">
+      <input type="file" id="crew-input" accept=".json">
+      <div style="font-size:32px;margin-bottom:8px">👥</div>
+      <div>點擊選擇或拖入 crew_import.json</div>
+      <div id="crew-file-name" style="margin-top:8px;color:var(--accent)"></div>
+    </div>
+    <div id="crew-summary" style="display:none">
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-val" id="crew-count">0</div>
+          <div class="stat-lbl">機師人數</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="crew-ca">0</div>
+          <div class="stat-lbl">CA</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="crew-other">0</div>
+          <div class="stat-lbl">SFO / FO</div>
+        </div>
+      </div>
+      <button id="btn-import-crew" class="green">匯入機師名單（覆蓋現有資料）</button>
+    </div>
+    <div id="crew-import-log" style="display:none;background:var(--card);border-radius:8px;
+         padding:16px;font-family:var(--font-mono);font-size:12px;
+         max-height:200px;overflow-y:auto;color:var(--text-dim);margin-top:12px"></div>
+  </div>
+
   <!-- Progress -->
   <div class="card" id="progress-card" style="display:none">
     <div class="card-title">匯入進度</div>
@@ -188,6 +220,7 @@
             uid = user.uid
             setStatus('auth-status', `✓ 已登入：${user.email}`, 'green')
             show('file-card')
+            show('crew-card')
           }
         })
       } catch (e) {
@@ -464,6 +497,90 @@
         statusEl.textContent = '失敗：' + e.message
         statusEl.style.color = 'var(--red)'
       }
+    })
+
+    // ── Step 4: 機師名單 JSON 上傳 ────────────────
+    let crewJsonData = null
+
+    const crewInput = document.getElementById('crew-input')
+    const crewDrop  = document.getElementById('crew-drop')
+
+    crewDrop.addEventListener('click', () => crewInput.click())
+    crewDrop.addEventListener('dragover', e => { e.preventDefault(); crewDrop.classList.add('over') })
+    crewDrop.addEventListener('dragleave', () => crewDrop.classList.remove('over'))
+    crewDrop.addEventListener('drop', e => {
+      e.preventDefault(); crewDrop.classList.remove('over')
+      readCrewFile(e.dataTransfer.files[0])
+    })
+    crewInput.addEventListener('change', () => readCrewFile(crewInput.files[0]))
+
+    function readCrewFile(file) {
+      if (!file) return
+      document.getElementById('crew-file-name').textContent = file.name
+      const reader = new FileReader()
+      reader.onload = e => {
+        try {
+          crewJsonData = JSON.parse(e.target.result)
+          const ca    = crewJsonData.filter(c => c.position === 'CA').length
+          const other = crewJsonData.length - ca
+          document.getElementById('crew-count').textContent = crewJsonData.length
+          document.getElementById('crew-ca').textContent    = ca
+          document.getElementById('crew-other').textContent = other
+          show('crew-summary')
+        } catch {
+          document.getElementById('crew-file-name').textContent = '⚠ JSON 解析失敗'
+          document.getElementById('crew-file-name').style.color = 'var(--red)'
+        }
+      }
+      reader.readAsText(file)
+    }
+
+    document.getElementById('btn-import-crew')?.addEventListener('click', async () => {
+      if (!crewJsonData || !uid || !db) return
+      const btn    = document.getElementById('btn-import-crew')
+      const logEl  = document.getElementById('crew-import-log')
+      btn.disabled = true
+      btn.textContent = '匯入中…'
+      logEl.style.display = ''
+      logEl.innerHTML = ''
+
+      const addLog = (msg, color = '') => {
+        logEl.innerHTML += `<div style="color:${color || 'inherit'}">${msg}</div>`
+        logEl.scrollTop  = logEl.scrollHeight
+      }
+
+      const crewCol = collection(db, 'users', uid, 'crew')
+      let done = 0, errors = 0
+
+      for (let i = 0; i < crewJsonData.length; i += 500) {
+        const chunk = crewJsonData.slice(i, i + 500)
+        const batch = writeBatch(db)
+        for (const c of chunk) {
+          batch.set(doc(crewCol, c.objectId), {
+            firstName:     c.firstName     || '',
+            lastName:      c.lastName      || '',
+            position:      c.position      || '',
+            employeeId:    c.employeeId    || '',
+            licenceNumber: c.licenceNumber || '',
+            nationality:   c.nationality   || '',
+            notes:         c.notes         || '',
+          }, { merge: true })
+        }
+        try {
+          await batch.commit()
+          done += chunk.length
+          addLog(`✓ ${done} / ${crewJsonData.length} 位`, 'var(--green)')
+        } catch (e) {
+          errors++
+          addLog(`✗ batch 失敗: ${e.message}`, 'var(--red)')
+        }
+      }
+
+      btn.disabled    = false
+      btn.textContent = '匯入機師名單（覆蓋現有資料）'
+      addLog(errors
+        ? `完成（${done} 成功，${errors} 批失敗）`
+        : `✅ 全部 ${done} 位機師匯入完成！`, errors ? 'var(--amber)' : 'var(--green)')
     })
 
     // ── 工具函數 ───────────────────────────────────
