@@ -464,46 +464,57 @@ html, body {
 }
 .step-lbl {
   flex: 1;
-  font-size: 9px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
   text-align: center;
   cursor: pointer;
   transition: color 0.2s;
+  padding: 4px 0;        /* 加大點擊區域 */
+  -webkit-tap-highlight-color: transparent;
 }
 .step-lbl.active { color: var(--accent); }
 .step-lbl.done   { color: var(--green); }
 
-.wizard-steps {
+/* viewport 層：clip 住橫向溢出，佔剩餘高度 */
+.wizard-steps-port {
   flex: 1;
-  min-height: 0;        /* 必須：flex column 内で縮められるよう */
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* slider 層：橫向排列所有步驟，transform 在這 */
+.wizard-steps {
   display: flex;
-  overflow: visible;
+  height: 100%;
   transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
   will-change: transform;
 }
 
 .wizard-step {
   min-width: 100%;
+  height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 4px 20px 32px;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 /* 步驟標題 */
 .step-head { margin-bottom: 20px; }
 .step-num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-faint);
   margin-bottom: 4px;
 }
 .step-title {
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.02em;
@@ -519,30 +530,30 @@ html, body {
   border-bottom: 1px solid var(--border-med);
 }
 .input-row:first-of-type { border-top: 1px solid var(--border-med); }
-.row-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
-.row-lbl  { font-size: 14px; font-weight: 500; color: var(--text); flex: 1; }
-.row-sub  { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+.row-icon { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+.row-lbl  { font-size: 16px; font-weight: 500; color: var(--text); flex: 1; }
+.row-sub  { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 .inline-input {
   background: transparent;
   border: none; outline: none;
   font-family: var(--font-mono);
-  font-size: 16px; font-weight: 600;
+  font-size: 18px; font-weight: 600;
   color: var(--text);
-  text-align: right; width: 120px;
+  text-align: right; width: 130px;
   caret-color: var(--accent);
 }
-.inline-input::placeholder { color: var(--text-faint); font-weight: 400; font-size: 14px; }
+.inline-input::placeholder { color: var(--text-faint); font-weight: 400; font-size: 16px; }
 .inline-input:focus { color: var(--accent); }
 .date-input {
   background: transparent;
   border: none; outline: none;
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 16px;
   color: var(--text);
   text-align: right;
   color-scheme: dark;
   cursor: pointer;
-  width: 140px;
+  width: 150px;
 }
 .date-input:focus { color: var(--accent); }
 
@@ -563,10 +574,11 @@ html, body {
 }
 .oooi-cell:focus-within { border-color: var(--accent); background: var(--card); }
 .oooi-label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 12px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   display: flex; align-items: center; gap: 6px;
+  color: var(--text-dim);
 }
 .oooi-dot {
   width: 7px; height: 7px;
@@ -602,24 +614,26 @@ html, body {
   padding: 12px 14px;
 }
 .calc-lbl {
-  font-size: 10px; letter-spacing: 0.1em;
+  font-size: 12px; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text-dim);
 }
 .calc-val {
   font-family: var(--font-mono);
-  font-size: 20px; font-weight: 700;
+  font-size: 22px; font-weight: 700;
   color: var(--accent);
   margin-top: 4px;
+  letter-spacing: -0.03em;
 }
 .night-input {
   background: transparent; border: none; outline: none;
   font-family: var(--font-mono);
-  font-size: 20px; font-weight: 700;
+  font-size: 22px; font-weight: 700;
   color: var(--accent);
   width: 100%;
   caret-color: var(--accent);
+  letter-spacing: -0.03em;
 }
-.night-input::placeholder { color: var(--text-faint); font-size: 16px; font-weight: 400; }
+.night-input::placeholder { color: var(--text-faint); font-size: 17px; font-weight: 400; }
 
 /* Step 3 Aircraft */
 .reg-scroll-wrap {
@@ -650,10 +664,10 @@ html, body {
 }
 .reg-reg {
   font-family: var(--font-mono);
-  font-size: 12px; font-weight: 700;
+  font-size: 13px; font-weight: 700;
   color: var(--text);
 }
-.reg-type-label { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.reg-type-label { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
 .reg-btn.sel .reg-reg { color: var(--accent); }
 
 /* Approach grid (5列) */
@@ -667,10 +681,10 @@ html, body {
   background: var(--surface);
   border: 1px solid var(--border-med);
   border-radius: 10px;
-  padding: 12px 4px;
+  padding: 13px 4px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   color: var(--text-dim);
   cursor: pointer;
   transition: all 0.15s;
@@ -722,9 +736,9 @@ html, body {
   background: rgba(0,180,216,0.1);
   border-color: rgba(0,180,216,0.4);
 }
-.toggle-card-icon { font-size: 20px; color: var(--text-dim); transition: color 0.15s; }
+.toggle-card-icon { font-size: 22px; color: var(--text-dim); transition: color 0.15s; }
 .toggle-card-label {
-  font-size: 13px; font-weight: 600;
+  font-size: 15px; font-weight: 600;
   color: var(--text-dim);
   transition: color 0.15s;
   line-height: 1.2;
@@ -749,7 +763,7 @@ html, body {
 }
 .num-box:focus-within { border-color: var(--accent); }
 .num-box-lbl {
-  font-size: 10px; letter-spacing: 0.1em;
+  font-size: 12px; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text-dim);
 }
 .num-box-input {
@@ -779,13 +793,13 @@ html, body {
 .crew-slot:active { background: var(--card); }
 .crew-slot.filled { border-color: var(--border-med); }
 .crew-avatar {
-  width: 36px; height: 36px;
+  width: 40px; height: 40px;
   border-radius: 10px;
   background: var(--card);
   border: 1px solid var(--border-med);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--font-mono);
-  font-size: 11px; font-weight: 700;
+  font-size: 13px; font-weight: 700;
   color: var(--text-dim);
   flex-shrink: 0;
 }
@@ -796,11 +810,11 @@ html, body {
 }
 .crew-info { flex: 1; }
 .crew-role {
-  font-size: 10px; letter-spacing: 0.08em;
+  font-size: 12px; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--text-faint);
 }
 .crew-name-val {
-  font-size: 14px; font-weight: 600;
+  font-size: 16px; font-weight: 600;
   color: var(--text-dim); margin-top: 2px;
 }
 .crew-slot.filled .crew-name-val { color: var(--text); }

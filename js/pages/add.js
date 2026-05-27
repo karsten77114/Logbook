@@ -213,6 +213,16 @@ export function renderAdd(root) {
     renderCrewSlots(root, crewSlots)
   })
 
+  // ── 步驟標籤自由跳轉 ─────────────────────────
+  root.querySelectorAll('.step-lbl').forEach((lbl, idx) => {
+    lbl.addEventListener('click', () => {
+      collectStep(root, form, currentStep)  // 儲存目前步驟資料
+      currentStep = idx
+      goToStep(root, currentStep, wizSteps)
+      updateNav(root, currentStep, btnBack, btnNext)
+    })
+  })
+
   // Initial state
   updateNav(root, 0, btnBack, btnNext)
   renderSheetList(sheetList, crewSlots, -1, '')
@@ -407,12 +417,14 @@ function buildHTML(form) {
           ).join('')}
         </div>
 
-        <div class="wizard-steps" id="wizard-steps">
-          ${step1Html(form)}
-          ${step2Html(form)}
-          ${step3Html(form)}
-          ${step4Html(form)}
-          ${step5Html()}
+        <div class="wizard-steps-port">
+          <div class="wizard-steps" id="wizard-steps">
+            ${step1Html(form)}
+            ${step2Html(form)}
+            ${step3Html(form)}
+            ${step4Html(form)}
+            ${step5Html()}
+          </div>
         </div>
 
         <div class="step-nav">
