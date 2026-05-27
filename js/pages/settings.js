@@ -136,9 +136,10 @@ function careerItemHtml(c, i) {
 
 function crewRowHtml(c) {
   return `
-    <div class="settings-row" data-crew-id="${c.id}">
+    <div class="settings-row" data-crew-id="${c.id}" style="cursor:pointer">
       <span class="settings-row-label">${c.firstName} ${c.lastName}</span>
       <span class="settings-row-value">${c.position || ''}</span>
+      <span class="settings-row-chevron">›</span>
     </div>`
 }
 
@@ -189,6 +190,27 @@ function attachSettingsEvents(root) {
       state.crew.push({ id, ...data })
       renderContent(root)
       showToast('已新增', 'success')
+    })
+  })
+
+  // Crew edit/delete（點擊已存在的 crew row）
+  root.querySelectorAll('[data-crew-id]').forEach(el => {
+    el.addEventListener('click', () => {
+      const crewId = el.dataset.crewId
+      const person = state.crew.find(c => c.id === crewId)
+      if (!person) return
+      showCrewSheet(root, person, async data => {
+        await saveCrew(state.user.uid, crewId, data)
+        const idx = state.crew.findIndex(c => c.id === crewId)
+        if (idx >= 0) state.crew[idx] = { id: crewId, ...data }
+        renderContent(root)
+        showToast('已更新', 'success')
+      }, async () => {
+        await deleteCrew(state.user.uid, crewId)
+        state.crew = state.crew.filter(c => c.id !== crewId)
+        renderContent(root)
+        showToast('已刪除', 'success')
+      })
     })
   })
 
@@ -324,7 +346,7 @@ function showCareerSheet(root, career, onSave, onDelete) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
-function showCrewSheet(root, crew, onSave) {
+function showCrewSheet(root, crew, onSave, onDelete) {
   const c = crew || {}
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -347,13 +369,14 @@ function showCrewSheet(root, crew, onSave) {
       <div class="form-group">
         <label class="form-label">職位</label>
         <select class="form-select" id="cr-position">
-          ${['FO','SFO','CA','Check Captain','其他'].map(p =>
+          ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
             `<option ${p === c.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
         </select>
       </div>
 
       <button class="btn btn-primary btn-full" id="crew-save">儲存</button>
+      ${onDelete ? `<button class="btn btn-danger btn-full" id="crew-del">刪除此機師</button>` : ''}
     </div>`
   document.body.appendChild(overlay)
 
@@ -368,6 +391,11 @@ function showCrewSheet(root, crew, onSave) {
     }
     await onSave(data)
     overlay.remove()
+  })
+
+  overlay.querySelector('#crew-del')?.addEventListener('click', async () => {
+    overlay.remove()
+    await onDelete()
   })
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })

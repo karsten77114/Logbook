@@ -20,6 +20,7 @@
     p  { color: var(--text-dim); font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
     .card { background: var(--surface); border: 1px solid var(--border-med);
             border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    .card-title { font-size: 13px; color: var(--text); margin-bottom: 16px; font-weight: 700; }
     label { display: block; font-size: 11px; font-family: var(--font-mono);
             letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim);
             margin-bottom: 8px; }
@@ -37,21 +38,31 @@
     button {
       background: var(--accent); color: var(--bg); border: none; border-radius: 6px;
       font-size: 15px; font-weight: 700; padding: 13px 24px; cursor: pointer;
-      width: 100%; margin-bottom: 10px; font-family: var(--font-ui); }
+      width: 100%; margin-bottom: 10px; font-family: var(--font-ui);
+      transition: opacity 0.15s; }
     button:disabled { opacity: 0.4; cursor: default; }
+    button:not(:disabled):active { opacity: 0.8; }
     button.secondary { background: var(--card); color: var(--text-dim);
                        border: 1px solid var(--border-med); }
+    button.green { background: var(--green); }
     #log { background: var(--card); border-radius: 8px; padding: 16px;
            font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
            max-height: 300px; overflow-y: auto; color: var(--text-dim); }
     .log-ok  { color: var(--green); }
     .log-err { color: var(--red); }
     .log-inf { color: var(--accent); }
+    .log-warn{ color: var(--amber); }
     progress {
       width: 100%; height: 6px; border-radius: 3px;
       background: var(--card); margin-bottom: 12px; }
     progress::-webkit-progress-bar { background: var(--card); border-radius: 3px; }
     progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; }
+    .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
+    .stat-box { flex: 1; background: var(--card); border-radius: 8px; padding: 12px;
+                text-align: center; }
+    .stat-val { font-family: var(--font-mono); font-size: 22px; font-weight: 700;
+                color: var(--accent); }
+    .stat-lbl { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
   </style>
 
   <script type="importmap">
@@ -66,165 +77,237 @@
 </head>
 <body>
   <h1>LOGBOOK IMPORT</h1>
-  <p>一次性批次匯入工具 — 將 logbook.json 的 3,181 筆歷史記錄寫入 Firebase Firestore。<br>
-     每筆記錄以 objectId 為文件 ID，重複執行不會重複匯入。</p>
+  <p>一次性批次匯入工具 — 將 3,181 筆歷史飛行記錄與 144 位機師名單寫入 Firebase Firestore。<br>
+     以 objectId 為 document ID，重複執行不會重複匯入（merge mode）。</p>
 
-  <!-- Step 1: Firebase config -->
+  <!-- Step 1: Firebase 連線（自動填入） -->
   <div class="card">
-    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 1 — Firebase 設定</div>
+    <div class="card-title">Step 1 — Firebase 連線</div>
     <label>API Key</label>
-    <input type="text" id="cfg-apikey" placeholder="AIza…">
+    <input type="text" id="cfg-apikey" value="AIzaSyCArGgLWdA1ExDLdpVEmBDteVWGDzLIhmI">
     <label>Project ID</label>
-    <input type="text" id="cfg-projectid" placeholder="pilot-logbook-xxxxx">
+    <input type="text" id="cfg-projectid" value="pilot-logbook-ef111">
     <label>Auth Domain</label>
-    <input type="text" id="cfg-authdomain" placeholder="pilot-logbook-xxxxx.firebaseapp.com">
+    <input type="text" id="cfg-authdomain" value="pilot-logbook-ef111.firebaseapp.com">
     <button id="btn-connect" class="secondary">連接 Firebase</button>
     <div id="connect-status" style="font-size:12px;color:var(--text-dim);margin-top:8px"></div>
   </div>
 
-  <!-- Step 2: Auth -->
+  <!-- Step 2: 登入 -->
   <div class="card" id="auth-card" style="display:none">
-    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 2 — 登入</div>
-    <p>請先登入你的帳號，確保資料寫入正確的 UID。</p>
+    <div class="card-title">Step 2 — 登入帳號</div>
+    <p>請用你的 Google 帳號登入，確保資料寫入正確的 UID。</p>
     <button id="btn-login">Google 登入</button>
     <div id="auth-status" style="font-size:12px;color:var(--text-dim)"></div>
   </div>
 
-  <!-- Step 3: File -->
+  <!-- Step 3: 載入資料 -->
   <div class="card" id="file-card" style="display:none">
-    <div style="font-size:13px;color:var(--text);margin-bottom:16px;font-weight:700">Step 3 — 選擇 logbook.json</div>
+    <div class="card-title">Step 3 — 載入 logbook.json</div>
+
+    <!-- 優先：從伺服器一鍵載入 -->
+    <button id="btn-load-server" class="green" style="margin-bottom:16px">
+      ⬇ 從伺服器直接載入（推薦）
+    </button>
+
+    <p style="text-align:center;margin:8px 0;font-size:12px">— 或手動選擇本機檔案 —</p>
+
     <div class="file-drop" id="file-drop">
       <input type="file" id="file-input" accept=".json">
       <div style="font-size:32px;margin-bottom:8px">📂</div>
       <div>點擊選擇或拖入 logbook.json</div>
       <div id="file-name" style="margin-top:8px;color:var(--accent)"></div>
     </div>
-    <button id="btn-import" disabled>開始匯入</button>
+
+    <!-- 資料摘要 -->
+    <div id="data-summary" style="display:none">
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-val" id="sum-flights">0</div>
+          <div class="stat-lbl">航班記錄</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="sum-crew">0</div>
+          <div class="stat-lbl">機師名單</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="sum-range">—</div>
+          <div class="stat-lbl">日期範圍</div>
+        </div>
+      </div>
+      <button id="btn-import">開始匯入（航班 + 機師）</button>
+    </div>
   </div>
 
   <!-- Progress -->
   <div class="card" id="progress-card" style="display:none">
-    <div style="font-size:13px;color:var(--text);margin-bottom:12px;font-weight:700">匯入進度</div>
+    <div class="card-title">匯入進度</div>
+    <div id="phase-label" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
     <progress id="progress-bar" value="0" max="100"></progress>
     <div id="progress-text" style="font-size:12px;color:var(--text-dim);margin-bottom:12px"></div>
     <div id="log"></div>
   </div>
 
   <script type="module">
-    import { initializeApp }             from 'firebase/app'
+    import { initializeApp }                              from 'firebase/app'
     import { getAuth, GoogleAuthProvider,
-             signInWithPopup, onAuthStateChanged } from 'firebase/auth'
+             signInWithPopup, onAuthStateChanged }        from 'firebase/auth'
     import { getFirestore, collection, doc,
-             writeBatch, serverTimestamp }         from 'firebase/firestore'
+             writeBatch, setDoc, serverTimestamp }        from 'firebase/firestore'
 
     let app, auth, db, uid
-    let jsonData = null
+    let jsonData   = null  // 航班陣列
+    let crewList   = []    // 從航班中提取的機師
 
-    // ── Connect Firebase ───────────────────────
+    // ── Step 1: 連線 ───────────────────────────────
     document.getElementById('btn-connect').addEventListener('click', () => {
       const apiKey     = document.getElementById('cfg-apikey').value.trim()
       const projectId  = document.getElementById('cfg-projectid').value.trim()
       const authDomain = document.getElementById('cfg-authdomain').value.trim()
-
       if (!apiKey || !projectId) {
-        document.getElementById('connect-status').textContent = '請填入 API Key 和 Project ID'
+        setStatus('connect-status', '請填入 API Key 和 Project ID', 'red')
         return
       }
-
       try {
         app  = initializeApp({ apiKey, authDomain, projectId }, 'import-app')
         auth = getAuth(app)
         db   = getFirestore(app)
-        document.getElementById('connect-status').textContent = '✓ 已連接 Firebase'
-        document.getElementById('connect-status').style.color = 'var(--green)'
-        document.getElementById('auth-card').style.display = ''
+        setStatus('connect-status', '✓ 已連接 Firebase', 'green')
+        show('auth-card')
 
         onAuthStateChanged(auth, user => {
           if (user) {
             uid = user.uid
-            document.getElementById('auth-status').textContent =
-              `✓ 已登入：${user.email} (uid: ${uid})`
-            document.getElementById('auth-status').style.color = 'var(--green)'
-            document.getElementById('file-card').style.display = ''
+            setStatus('auth-status', `✓ 已登入：${user.email}`, 'green')
+            show('file-card')
           }
         })
       } catch (e) {
-        document.getElementById('connect-status').textContent = '連接失敗：' + e.message
-        document.getElementById('connect-status').style.color = 'var(--red)'
+        setStatus('connect-status', '連接失敗：' + e.message, 'red')
       }
     })
 
-    // ── Login ──────────────────────────────────
+    // ── Step 2: 登入 ───────────────────────────────
     document.getElementById('btn-login').addEventListener('click', async () => {
       try {
-        const provider = new GoogleAuthProvider()
-        await signInWithPopup(auth, provider)
+        await signInWithPopup(auth, new GoogleAuthProvider())
       } catch (e) {
-        document.getElementById('auth-status').textContent = '登入失敗：' + e.message
-        document.getElementById('auth-status').style.color = 'var(--red)'
+        setStatus('auth-status', '登入失敗：' + e.message, 'red')
       }
     })
 
-    // ── File ───────────────────────────────────
-    const fileInput  = document.getElementById('file-input')
-    const fileDrop   = document.getElementById('file-drop')
-    const btnImport  = document.getElementById('btn-import')
+    // ── Step 3a: 從伺服器載入 ──────────────────────
+    document.getElementById('btn-load-server').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-load-server')
+      btn.disabled = true
+      btn.textContent = '載入中…'
+      try {
+        const res  = await fetch('../data/logbook.json')
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        loadData(data)
+        btn.textContent = '✓ 已從伺服器載入'
+      } catch (e) {
+        btn.disabled = false
+        btn.textContent = '⬇ 從伺服器直接載入（推薦）'
+        document.getElementById('file-name').textContent = '⚠ 伺服器載入失敗：' + e.message
+        document.getElementById('file-name').style.color = 'var(--red)'
+      }
+    })
+
+    // ── Step 3b: 手動選擇檔案 ─────────────────────
+    const fileInput = document.getElementById('file-input')
+    const fileDrop  = document.getElementById('file-drop')
 
     fileDrop.addEventListener('click', () => fileInput.click())
     fileDrop.addEventListener('dragover', e => { e.preventDefault(); fileDrop.classList.add('over') })
     fileDrop.addEventListener('dragleave', () => fileDrop.classList.remove('over'))
     fileDrop.addEventListener('drop', e => {
       e.preventDefault(); fileDrop.classList.remove('over')
-      loadFile(e.dataTransfer.files[0])
+      readFile(e.dataTransfer.files[0])
     })
-    fileInput.addEventListener('change', () => loadFile(fileInput.files[0]))
+    fileInput.addEventListener('change', () => readFile(fileInput.files[0]))
 
-    function loadFile(file) {
+    function readFile(file) {
       if (!file) return
-      document.getElementById('file-name').textContent = `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`
+      document.getElementById('file-name').textContent =
+        `${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`
       const reader = new FileReader()
       reader.onload = e => {
-        try {
-          jsonData = JSON.parse(e.target.result)
-          btnImport.disabled = false
-          btnImport.textContent = `開始匯入 ${jsonData.length.toLocaleString()} 筆`
-        } catch {
-          document.getElementById('file-name').textContent = '⚠ JSON 解析失敗'
-          document.getElementById('file-name').style.color = 'var(--red)'
-        }
+        try { loadData(JSON.parse(e.target.result)) }
+        catch { document.getElementById('file-name').textContent = '⚠ JSON 解析失敗'
+                document.getElementById('file-name').style.color = 'var(--red)' }
       }
       reader.readAsText(file)
     }
 
-    // ── Import ─────────────────────────────────
-    btnImport.addEventListener('click', async () => {
-      if (!jsonData || !uid || !db) return
-      btnImport.disabled = true
-      document.getElementById('progress-card').style.display = ''
+    function loadData(data) {
+      jsonData  = data
+      crewList  = extractCrew(data)
 
-      const log     = document.getElementById('log')
-      const bar     = document.getElementById('progress-bar')
-      const txt     = document.getElementById('progress-text')
-      const total   = jsonData.length
-      let done      = 0
-      let errors    = 0
+      // 顯示摘要
+      const dates    = data.map(f => f.date).filter(Boolean).sort()
+      const minDate  = dates[0]?.slice(0,7) || '?'
+      const maxDate  = dates[dates.length-1]?.slice(0,7) || '?'
+
+      document.getElementById('sum-flights').textContent = data.length.toLocaleString()
+      document.getElementById('sum-crew').textContent    = crewList.length
+      document.getElementById('sum-range').textContent   = `${minDate}~${maxDate}`
+      show('data-summary')
+      document.getElementById('btn-import').textContent  =
+        `開始匯入（${data.length.toLocaleString()} 航班 + ${crewList.length} 機師）`
+    }
+
+    // ── 從航班提取機師名單 ─────────────────────────
+    function extractCrew(flights) {
+      const map = {}
+      for (const f of flights) {
+        const ids   = f.crew       || []
+        const names = f.crewNames  || []
+        for (let i = 0; i < ids.length; i++) {
+          const id = ids[i]; if (!id || map[id]) continue
+          const name   = (names[i] || '').trim()
+          const parts  = name.split(/\s+/).filter(Boolean)
+          // 中文格式：名 姓（最後一個詞是姓）
+          const last   = parts.length > 1 ? parts[parts.length - 1] : ''
+          const first  = parts.slice(0, -1).join(' ')
+          map[id] = { id, firstName: first || name, lastName: last, position: '' }
+        }
+      }
+      return Object.values(map)
+    }
+
+    // ── 開始匯入 ───────────────────────────────────
+    document.getElementById('btn-import')?.addEventListener('click', async () => {
+      if (!jsonData || !uid || !db) return
+
+      document.getElementById('btn-import').disabled = true
+      show('progress-card')
+
+      const logEl  = document.getElementById('log')
+      const bar    = document.getElementById('progress-bar')
+      const txt    = document.getElementById('progress-text')
+      const phase  = document.getElementById('phase-label')
 
       const addLog = (msg, cls='') => {
-        log.innerHTML += `<div class="${cls}">${msg}</div>`
-        log.scrollTop  = log.scrollHeight
+        logEl.innerHTML += `<div class="${cls}">${msg}</div>`
+        logEl.scrollTop  = logEl.scrollHeight
       }
 
-      addLog(`開始匯入 ${total.toLocaleString()} 筆記錄…`, 'log-inf')
+      // ── Phase 1：匯入航班 ────────────────────────
+      phase.textContent = '⬆ Phase 1 / 2 — 匯入航班記錄'
+      addLog(`開始匯入 ${jsonData.length.toLocaleString()} 筆航班…`, 'log-inf')
 
-      const col = collection(db, 'users', uid, 'flights')
+      const col   = collection(db, 'users', uid, 'flights')
+      const total = jsonData.length
+      let done  = 0, errors = 0
 
       for (let i = 0; i < total; i += 500) {
         const chunk = jsonData.slice(i, i + 500)
         const batch = writeBatch(db)
 
         for (const f of chunk) {
-          const ref = doc(col, f.objectId)
-          batch.set(ref, {
+          batch.set(doc(col, f.objectId), {
             date:               f.date               || '',
             flightNumber:       f.flightNumber       || '',
             aircraftType:       f.aircraftType        || '',
@@ -259,19 +342,66 @@
         try {
           await batch.commit()
           done += chunk.length
-          bar.value = Math.round(done / total * 100)
-          txt.textContent = `${done.toLocaleString()} / ${total.toLocaleString()} (${bar.value}%)`
-          addLog(`✓ Batch ${Math.ceil(i/500)+1} — ${chunk.length} 筆`, 'log-ok')
+          bar.value = Math.round(done / total * 50)  // 前 50%
+          txt.textContent = `航班 ${done.toLocaleString()} / ${total.toLocaleString()}`
+          addLog(`✓ 航班 batch ${Math.ceil((i+1)/500)} — ${chunk.length} 筆`, 'log-ok')
         } catch (e) {
           errors++
-          addLog(`✗ Batch 失敗: ${e.message}`, 'log-err')
+          addLog(`✗ 航班 batch 失敗: ${e.message}`, 'log-err')
         }
       }
 
-      addLog(`\n完成！成功 ${done} 筆，失敗 ${errors} 批`, errors ? 'log-err' : 'log-ok')
-      btnImport.disabled  = false
-      btnImport.textContent = '再次匯入（merge mode，不重複）'
+      addLog(`航班匯入完成：${done} 筆 ${errors ? `（${errors} 批失敗）` : ''}`,
+             errors ? 'log-warn' : 'log-ok')
+
+      // ── Phase 2：匯入機師 ────────────────────────
+      phase.textContent = '⬆ Phase 2 / 2 — 匯入機師名單'
+      addLog(`\n開始匯入 ${crewList.length} 位機師…`, 'log-inf')
+
+      const crewCol   = collection(db, 'users', uid, 'crew')
+      let crewDone    = 0
+      let crewErrors  = 0
+
+      // 機師數量不多，逐筆寫入（不需要 batch）
+      for (const c of crewList) {
+        try {
+          await setDoc(doc(crewCol, c.id), {
+            firstName: c.firstName,
+            lastName:  c.lastName,
+            position:  c.position,
+          }, { merge: true })
+          crewDone++
+          bar.value = 50 + Math.round(crewDone / crewList.length * 50)  // 後 50%
+          txt.textContent = `機師 ${crewDone} / ${crewList.length}`
+        } catch (e) {
+          crewErrors++
+          addLog(`✗ 機師 ${c.id} 失敗: ${e.message}`, 'log-err')
+        }
+      }
+
+      addLog(`機師匯入完成：${crewDone} 位 ${crewErrors ? `（${crewErrors} 失敗）` : ''}`,
+             crewErrors ? 'log-warn' : 'log-ok')
+
+      // ── 完成 ────────────────────────────────────
+      bar.value = 100
+      const totalErrors = errors + crewErrors
+      addLog(`\n✅ 全部完成！航班 ${done} 筆 + 機師 ${crewDone} 位`,
+             totalErrors ? 'log-warn' : 'log-ok')
+      phase.textContent = totalErrors
+        ? `⚠ 完成（有 ${totalErrors} 個錯誤，可重新執行）`
+        : '✅ 匯入成功！可回到 App 查看記錄'
+
+      document.getElementById('btn-import').disabled  = false
+      document.getElementById('btn-import').textContent = '再次執行（merge mode，不重複）'
     })
+
+    // ── 工具函數 ───────────────────────────────────
+    function show(id) { document.getElementById(id).style.display = '' }
+    function setStatus(id, msg, color) {
+      const el = document.getElementById(id)
+      el.textContent  = msg
+      el.style.color  = `var(--${color})`
+    }
   </script>
 </body>
 </html>
