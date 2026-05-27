@@ -369,8 +369,9 @@ function showCrewSheet(root, crew, onSave, onDelete) {
       <div class="form-group">
         <label class="form-label">職位</label>
         <select class="form-select" id="cr-position">
+          <option value="" ${!c.position ? 'selected' : ''}>— 未設定 —</option>
           ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
-            `<option ${p === c.position ? 'selected' : ''}>${p}</option>`
+            `<option value="${p}" ${p === c.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
         </select>
       </div>
