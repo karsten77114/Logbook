@@ -162,10 +162,8 @@ function buildDetailHtml(f) {
 
       <!-- Charts placeholder -->
       <div class="detail-card hidden" id="charts-card">
-        <div class="detail-card-title">Altitude Profile</div>
-        <canvas id="chart-altitude" style="width:100%;max-height:160px"></canvas>
-        <div class="detail-card-title" style="margin-top:16px">Groundspeed</div>
-        <canvas id="chart-speed" style="width:100%;max-height:120px"></canvas>
+        <div class="detail-card-title">Altitude · Groundspeed</div>
+        <canvas id="chart-combined" style="width:100%;max-height:200px"></canvas>
       </div>
 
     </div>`
@@ -321,35 +319,47 @@ function renderMap(root, track) {
 
 // ── Charts ─────────────────────────────────────
 
-/** Cursor plugin drawn on each chart (per-chart, not global) */
+/** Cursor plugin: vertical dashed line + dots on both datasets */
 const _cursorPlugin = {
   id: 'trackCursor',
   afterDraw(chart) {
     const idx = chart._cursorIdx
     if (idx == null) return
-    const meta = chart.getDatasetMeta(0)
-    if (!meta?.data?.[idx]) return
-    const x = meta.data[idx].x
     const { ctx, chartArea } = chart
     if (!chartArea) return
-    ctx.save()
-    ctx.beginPath()
-    ctx.moveTo(x, chartArea.top)
-    ctx.lineTo(x, chartArea.bottom)
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)'
-    ctx.lineWidth = 1.5
-    ctx.setLineDash([4, 3])
-    ctx.stroke()
-    const y = meta.data[idx].y
-    ctx.beginPath()
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2)
-    ctx.fillStyle = '#fff'
-    ctx.fill()
-    ctx.restore()
+    let lineX = null
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i)
+      if (!meta?.data?.[idx]) return
+      const x = meta.data[idx].x
+      const y = meta.data[idx].y
+      if (lineX == null) lineX = x
+      // dot for each line
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, Math.PI * 2)
+      ctx.fillStyle = ds.borderColor
+      ctx.fill()
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      ctx.restore()
+    })
+    if (lineX != null) {
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(lineX, chartArea.top)
+      ctx.lineTo(lineX, chartArea.bottom)
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 3])
+      ctx.stroke()
+      ctx.restore()
+    }
   },
 }
 
-/** Render altitude & speed charts; returns {altChart, spdChart, sample} */
+/** Render combined altitude + groundspeed chart with dual Y-axes; returns {chart, sample} */
 function renderCharts(root, track) {
   if (!track?.length || typeof Chart === 'undefined') return null
 
@@ -361,33 +371,54 @@ function renderCharts(root, track) {
     const d = new Date(p.t * 1000)
     return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
   })
-  const altData = sample.map(p => p.a)
-  const spdData = sample.map(p => p.s)
 
-  const mkOpts = () => ({
-    responsive: true,
-    animation: false,
-    plugins: { legend: { display: false } },
-    elements: { point: { radius: 0 }, line: { tension: 0.3 } },
-    scales: {
-      x: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
-      y: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
+  const ctx = root.querySelector('#chart-combined')?.getContext('2d')
+  if (!ctx) return { chart: null, sample }
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    plugins: [_cursorPlugin],
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Alt (ft)',
+          data:  sample.map(p => p.a),
+          borderColor: '#00b4d8', borderWidth: 1.5, fill: false,
+          yAxisID: 'yAlt', tension: 0.3, pointRadius: 0,
+        },
+        {
+          label: 'GS (kts)',
+          data:  sample.map(p => p.s),
+          borderColor: '#f0a030', borderWidth: 1.5, fill: false,
+          yAxisID: 'ySpd', tension: 0.3, pointRadius: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#6888a0', font: { size: 10 }, maxRotation: 0 },
+          grid:  { color: '#1e2d3d' },
+        },
+        yAlt: {
+          type: 'linear', position: 'left',
+          ticks: { color: '#00b4d8', font: { size: 9 } },
+          grid:  { color: '#1e2d3d' },
+        },
+        ySpd: {
+          type: 'linear', position: 'right',
+          ticks: { color: '#f0a030', font: { size: 9 } },
+          grid:  { drawOnChartArea: false },
+        },
+      },
     },
   })
 
-  const altCtx = root.querySelector('#chart-altitude')?.getContext('2d')
-  const altChart = altCtx ? new Chart(altCtx, {
-    type: 'line', plugins: [_cursorPlugin], options: mkOpts(),
-    data: { labels, datasets: [{ data: altData, borderColor: '#00b4d8', borderWidth: 1.5, fill: false }] },
-  }) : null
-
-  const spdCtx = root.querySelector('#chart-speed')?.getContext('2d')
-  const spdChart = spdCtx ? new Chart(spdCtx, {
-    type: 'line', plugins: [_cursorPlugin], options: mkOpts(),
-    data: { labels, datasets: [{ data: spdData, borderColor: '#f0a030', borderWidth: 1.5, fill: false }] },
-  }) : null
-
-  return { altChart, spdChart, sample }
+  return { chart, sample }
 }
 
 // ── Timeline ───────────────────────────────────
@@ -416,17 +447,23 @@ function initTimeline(root, track, mapObjs, chartObjs) {
   tlArr.textContent = fmtUTC(track[track.length - 1].t)
 
   const { marker, flownLine } = mapObjs
-  const { altChart, spdChart, sample } = chartObjs || {}
+  const { chart, sample } = chartObjs || {}
   const sampleLen = sample?.length || 1
 
   function update(rawIdx) {
     const idx = Math.max(0, Math.min(rawIdx, track.length - 1))
     const pt  = track[idx]
 
-    // Map: move plane marker + fill flown line
-    const hdg = idx > 0 ? _bearing(track[idx - 1], pt) : _bearing(track[0], track[1] || track[0])
+    // Map: rotate plane via DOM (avoids re-creating Leaflet icon element each tick)
+    const hdg = idx > 0
+      ? _bearing(track[idx - 1], pt)
+      : _bearing(track[0], track[Math.min(1, track.length - 1)])
     marker.setLatLng([pt.la, pt.lo])
-    marker.setIcon(_planeIcon(hdg))
+    const markerEl = marker.getElement()
+    if (markerEl) {
+      const div = markerEl.querySelector('div')
+      if (div) div.style.transform = `rotate(${Math.round(hdg)}deg)`
+    }
     flownLine.setLatLngs(track.slice(0, idx + 1).map(p => [p.la, p.lo]))
 
     // Info bar
@@ -434,10 +471,9 @@ function initTimeline(root, track, mapObjs, chartObjs) {
     tlAlt.textContent  = pt.a > 0 ? `${pt.a.toLocaleString()} ft` : 'GND'
     tlSpd.textContent  = `${pt.s} kts`
 
-    // Chart cursors
+    // Combined chart cursor
     const si = Math.min(Math.floor(idx / 5), sampleLen - 1)
-    if (altChart) { altChart._cursorIdx = si; altChart.draw() }
-    if (spdChart) { spdChart._cursorIdx = si; spdChart.draw() }
+    if (chart) { chart._cursorIdx = si; chart.draw() }
   }
 
   slider.addEventListener('input', () => update(parseInt(slider.value)))
