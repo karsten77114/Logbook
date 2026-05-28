@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════
 // Add Flight — 5-Step Wizard (Prototype Design)
 // ══════════════════════════════════════════════
-import { addFlight }               from '../db.js'
+import { addFlight, saveCrew }      from '../db.js'
 import { state }                   from '../state.js'
 import { navigate, showToast }     from '../app.js'
 import { invalidateStats }         from './list.js'
@@ -19,6 +19,17 @@ import { isAircraftActive,
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 const TOTAL       = 5
+
+// ── Custom Aircraft (localStorage store) ──────
+const _LS_AC = 'logbook_custom_aircraft_v1'
+function getCustomAircraft() {
+  try { return JSON.parse(localStorage.getItem(_LS_AC) || '[]') } catch { return [] }
+}
+function addCustomAircraftEntry(reg, type) {
+  const list = getCustomAircraft()
+  if (!list.find(a => a.reg === reg)) list.push({ reg, type })
+  localStorage.setItem(_LS_AC, JSON.stringify(list))
+}
 
 // ── URL params prefill (Kneeboard integration) ─
 function parseUrlParams() {
@@ -178,6 +189,11 @@ export function renderAdd(root) {
     })
   })
 
+  // ── Step 3 — Aircraft quick-add ──────────────
+  root.querySelector('#btn-add-ac')?.addEventListener('click', () => {
+    showAircraftQuickAdd(root, form)
+  })
+
   // ── Step 5 — crew slots ───────────────────────
   root.querySelectorAll('.crew-slot').forEach((slot, idx) => {
     slot.addEventListener('click', () => {
@@ -188,6 +204,11 @@ export function renderAdd(root) {
 
   root.querySelector('#sheet-close')?.addEventListener('click', () => closeSheet(sheetEl))
   sheetEl?.addEventListener('click', e => { if (e.target === sheetEl) closeSheet(sheetEl) })
+
+  // Crew quick-add in sheet
+  root.querySelector('#sheet-add-crew')?.addEventListener('click', () => {
+    showCrewQuickAdd(sheetList, crewSlots, activeSlotIdx, sheetSearch)
+  })
 
   sheetSearch?.addEventListener('input', () => {
     renderSheetList(sheetList, crewSlots, activeSlotIdx, sheetSearch.value)
@@ -542,12 +563,17 @@ function step2Html(form) {
 // ── Step 3: Aircraft ──────────────────────────
 
 function step3Html(form) {
-  // 只顯示 Active 飛機（在 Airplanes sub-section 標記為 Active 的）
-  const activeRegs = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
-  const regOptions = activeRegs.map(r => {
+  // 顯示 Active 飛機 + localStorage 自訂機號
+  const activeRegs   = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
+  const customAC     = getCustomAircraft()
+  const regOptions   = activeRegs.map(r => {
     const type = getTypeByReg(r)
     const sel  = r === form.registration ? ' selected' : ''
     return `<option value="${r}"${sel}>${r} — ${type}</option>`
+  }).join('')
+  const customOptions = customAC.map(a => {
+    const sel = a.reg === form.registration ? ' selected' : ''
+    return `<option value="${a.reg}"${sel}>${a.reg} — ${a.type}</option>`
   }).join('')
 
   const approachOptions = APPROACH_TYPES.map(a => {
@@ -565,10 +591,12 @@ function step3Html(form) {
       <div class="input-row">
         <span class="row-icon">🪪</span>
         <div class="row-lbl">Registration</div>
-        <select class="inline-select" id="f-reg">
+        <select class="inline-select" id="f-reg" style="flex:1">
           <option value="">—</option>
           ${regOptions}
+          ${customOptions}
         </select>
+        <button class="wiz-inline-add" id="btn-add-ac" title="新增機號">＋</button>
       </div>
 
       <div class="input-row">
@@ -673,9 +701,6 @@ function step5Html() {
           </div>`).join('')}
       </div>
 
-      <div style="margin-top:16px;font-size:12px;color:var(--text-faint);text-align:center;line-height:1.5">
-        若同事不在清單中<br>可至 Settings → Crew 新增
-      </div>
     </div>`
 }
 
@@ -688,6 +713,9 @@ function crewSheetHtml() {
         <div class="sheet-handle"></div>
         <div class="sheet-head">
           <div class="sheet-head-title">Select Crew</div>
+          <button class="sheet-close" id="sheet-add-crew"
+                  style="color:var(--accent);font-size:22px;margin-right:4px"
+                  title="新增組員">＋</button>
           <button class="sheet-close" id="sheet-close">✕</button>
         </div>
         <div class="sheet-search-wrap">
@@ -712,6 +740,118 @@ function minHm(min) {
 function initials2(person) {
   if (!person) return '?'
   return `${person.firstName?.[0] || ''}${person.lastName?.[0] || ''}`.toUpperCase() || '?'
+}
+
+// ── Aircraft Quick-Add ─────────────────────────
+
+function showAircraftQuickAdd(root, form) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.style.zIndex = '10001'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">新增機號</div>
+      <div class="form-group">
+        <label class="form-label">機號 (Registration)</label>
+        <input class="form-input mono" id="qac-reg" type="text"
+               placeholder="B-12345" autocapitalize="characters" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">機型 (Type)</label>
+        <input class="form-input mono" id="qac-type" type="text"
+               placeholder="A321-252NX" autocomplete="off">
+      </div>
+      <button class="btn btn-primary btn-full" id="qac-save">新增</button>
+    </div>`
+  document.body.appendChild(overlay)
+  setTimeout(() => overlay.querySelector('#qac-reg')?.focus(), 50)
+
+  overlay.querySelector('#qac-save').addEventListener('click', () => {
+    const reg  = (overlay.querySelector('#qac-reg').value  || '').trim().toUpperCase()
+    const type = (overlay.querySelector('#qac-type').value || '').trim()
+    if (!reg || !type) { showToast('請填入機號和機型', 'error'); return }
+
+    addCustomAircraftEntry(reg, type)
+
+    // Append to Registration select and select it
+    const sel = root.querySelector('#f-reg')
+    if (sel) {
+      const existing = sel.querySelector(`option[value="${reg}"]`)
+      if (existing) existing.remove()
+      const opt = document.createElement('option')
+      opt.value = reg
+      opt.textContent = `${reg} — ${type}`
+      opt.selected = true
+      sel.appendChild(opt)
+      sel.dispatchEvent(new Event('change'))
+    }
+    form.registration = reg
+    form.aircraftType = type
+    const typeEl = root.querySelector('#f-type-display')
+    if (typeEl) typeEl.textContent = type
+
+    overlay.remove()
+    showToast('已新增機號', 'success')
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+}
+
+// ── Crew Quick-Add ─────────────────────────────
+
+function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.style.zIndex = '10001'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">新增組員</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">名字</label>
+          <input class="form-input" id="qc-first" type="text" placeholder="Po-Kang">
+        </div>
+        <div class="form-group">
+          <label class="form-label">姓氏</label>
+          <input class="form-input" id="qc-last" type="text" placeholder="Chang">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">職位</label>
+        <select class="form-select" id="qc-pos">
+          <option value="">— 未設定 —</option>
+          ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
+            `<option value="${p}">${p}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <button class="btn btn-primary btn-full" id="qc-save">新增</button>
+    </div>`
+  document.body.appendChild(overlay)
+  setTimeout(() => overlay.querySelector('#qc-first')?.focus(), 50)
+
+  overlay.querySelector('#qc-save').addEventListener('click', async () => {
+    const first = (overlay.querySelector('#qc-first').value || '').trim()
+    const last  = (overlay.querySelector('#qc-last').value  || '').trim()
+    const pos   = overlay.querySelector('#qc-pos').value
+    if (!first && !last) { showToast('請填入名字', 'error'); return }
+
+    const id   = `crew_${Date.now()}`
+    const data = { firstName: first, lastName: last, position: pos, active: true }
+    try {
+      await saveCrew(state.user.uid, id, data)
+      state.crew = [...(state.crew || []), { id, ...data }]
+      overlay.remove()
+      renderSheetList(listEl, crewSlots, slotIdx, searchEl?.value || '')
+      showToast('已新增組員', 'success')
+    } catch (e) {
+      showToast('新增失敗', 'error')
+    }
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
 // ── Airport Datalist ──────────────────────────

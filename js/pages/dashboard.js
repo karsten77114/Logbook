@@ -32,7 +32,7 @@ export async function renderDashboard(root) {
 function buildShell() {
   return `
     <div class="page" id="dash-page">
-      <div class="scroll" id="dash-scroll">
+      <div class="scroll" id="dash-scroll" style="padding-top:var(--safe-top)">
         <div class="list-loading"><div class="loader"></div></div>
       </div>
       ${bottomNav()}

@@ -13,8 +13,9 @@ import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
 import { navigate, showToast }                       from '../app.js'
 
 // ── Module-level state ────────────────────────
-let _section  = 'flights'  // flights | crew | airplanes | experience
-let _allStats = null        // cached stats
+let _section    = 'flights'  // flights | crew | airplanes | experience
+let _allStats   = null       // cached stats
+let _allFlights = null       // cached all flights (avoid double-fetch)
 
 const SECTIONS = [
   { id: 'flights',    label: 'Flights',    icon: '✈' },
@@ -205,18 +206,30 @@ function renderSection(root) {
 // ══════════════════════════════════════════════
 
 async function renderFlightsSection(root) {
-  if (!_allStats) await loadStats(root)
-  else            renderStats(root, _allStats)
-  await loadFlights(root, 0)
-  attachSearchFilter(root)
-}
+  const scroll = root.querySelector('#list-scroll')
 
-async function loadStats(root) {
-  try {
-    const flights = await getAllFlights(state.user.uid)
-    _allStats = computeStats(flights)
-    renderStats(root, _allStats)
-  } catch (e) { console.error(e) }
+  // Load once, cache for both stats + list
+  if (!_allFlights) {
+    if (scroll) scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
+    try {
+      _allFlights = await getAllFlights(state.user.uid)
+    } catch (e) {
+      if (scroll) scroll.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠</div>
+          <div class="empty-state-title">載入失敗</div>
+          <div class="empty-state-sub">${e.message}</div>
+        </div>`
+      return
+    }
+  }
+
+  if (!_allStats) {
+    _allStats = computeStats(_allFlights)
+  }
+  renderStats(root, _allStats)
+  renderFlightsList(root, _allFlights)
+  attachSearchFilter(root)
 }
 
 const FTD_REGS = new Set(['T12-FTD-01', 'T12-FTD-02'])
@@ -254,40 +267,37 @@ function renderStats(root, s) {
     </div>`).join('')
 }
 
-async function loadFlights(root, page = 0) {
+function renderFlightsList(root, allFlights) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
-  scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
-  try {
-    const { flights, total, pages } = await getFlights(
-      state.user.uid, page, state.filters, state.search
-    )
-    state.currentPage = page
-    state.flightPages = pages
-    state.flights     = flights
 
-    if (flights.length === 0) {
-      scroll.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">✈</div>
-          <div class="empty-state-title">尚無飛行記錄</div>
-          <div class="empty-state-sub">點右下角 ＋ 新增第一筆航班</div>
-        </div>`
-      return
-    }
-    scroll.innerHTML = `
-      <ul class="flight-list" id="flight-list"></ul>
-      ${pages > 1 ? paginationHtml(page, pages, total) : ''}
-    `
-    renderRows(root, flights)
-    attachPagination(root, loadFlights)
-  } catch (e) {
-    scroll.innerHTML = `<div class="empty-state">
-      <div class="empty-state-icon">⚠</div>
-      <div class="empty-state-title">載入失敗</div>
-      <div class="empty-state-sub">${e.message}</div>
-    </div>`
+  const q = (state.search || '').toLowerCase().trim()
+  let flights = allFlights || []
+  if (q) {
+    flights = flights.filter(f =>
+      (f.from         || '').toLowerCase().includes(q) ||
+      (f.to           || '').toLowerCase().includes(q) ||
+      (f.flightNumber || '').toLowerCase().includes(q) ||
+      (f.aircraftType || '').toLowerCase().includes(q) ||
+      (f.registration || '').toLowerCase().includes(q) ||
+      (f.crewNames    || []).some(n => n.toLowerCase().includes(q))
+    )
   }
+
+  state.flights = flights
+
+  if (flights.length === 0) {
+    scroll.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">✈</div>
+        <div class="empty-state-title">${q ? '找不到符合的航班' : '尚無飛行記錄'}</div>
+        <div class="empty-state-sub">${q ? '試試其他關鍵字' : '點右下角 ＋ 新增第一筆航班'}</div>
+      </div>`
+    return
+  }
+
+  scroll.innerHTML = `<ul class="flight-list" id="flight-list"></ul>`
+  renderRows(root, flights)
 }
 
 function renderRows(root, flights) {
@@ -306,6 +316,7 @@ function flightRowHtml(f) {
   const badges    = [
     f.pfTakeoff ? '<span class="badge badge-to">T/O</span>'   : '',
     f.pfLanding ? '<span class="badge badge-ldg">LDG</span>'  : '',
+    f.pic       ? '<span class="badge badge-pic">PIC</span>'  : '',
     f.nightTime > 0 ? '<span class="badge badge-night">N</span>' : '',
     f.goAround  ? '<span class="badge badge-ga">GA</span>'    : '',
     f.autoland  ? '<span class="badge badge-auto">AUTO</span>': '',
@@ -329,26 +340,12 @@ function flightRowHtml(f) {
     </li>`
 }
 
-function paginationHtml(page, pages, total) {
-  return `
-    <div class="pagination">
-      <button class="btn-page" id="btn-prev" ${page === 0 ? 'disabled' : ''}>← Prev</button>
-      <span class="page-info">${page+1} / ${pages}</span>
-      <button class="btn-page" id="btn-next" ${page >= pages-1 ? 'disabled' : ''}>Next →</button>
-    </div>`
-}
-
-function attachPagination(root, loader) {
-  root.querySelector('#btn-prev')?.addEventListener('click', () => loader(root, state.currentPage - 1))
-  root.querySelector('#btn-next')?.addEventListener('click', () => loader(root, state.currentPage + 1))
-}
-
 function attachSearchFilter(root) {
   let debounceTimer
   root.querySelector('#search-input')?.addEventListener('input', e => {
     clearTimeout(debounceTimer)
     state.search = e.target.value
-    debounceTimer = setTimeout(() => loadFlights(root, 0), 350)
+    debounceTimer = setTimeout(() => renderFlightsList(root, _allFlights || []), 350)
   })
 }
 
@@ -916,7 +913,7 @@ function showExpEditSheet(root, entry, allFlights, onSave, onDelete) {
 }
 
 // ── Public exports ────────────────────────────
-export function invalidateStats() { _allStats = null }
+export function invalidateStats() { _allStats = null; _allFlights = null }
 
 // ── Utils ─────────────────────────────────────
 function fmtNum(n) {

@@ -381,11 +381,12 @@ html, body {
   text-transform: uppercase;
 }
 
-.badge-to { background: var(--green-dim); color: var(--green); }
-.badge-ldg { background: var(--accent-dim); color: var(--accent); }
+.badge-to    { background: var(--green-dim);  color: var(--green);  }
+.badge-ldg   { background: var(--accent-dim); color: var(--accent); }
+.badge-pic   { background: rgba(200,160,0,.2); color: #e0b830;      }
 .badge-night { background: #1a1a40; color: #7070e0; }
-.badge-ga { background: var(--amber-dim); color: var(--amber); }
-.badge-auto { background: #1a2040; color: #5080e0; }
+.badge-ga    { background: var(--amber-dim); color: var(--amber); }
+.badge-auto  { background: #1a2040; color: #5080e0; }
 
 /* ── Pagination ──────────────────────────────── */
 .pagination {
@@ -569,6 +570,23 @@ html, body {
 }
 .inline-select:focus { color: var(--accent); }
 .inline-select option { color: var(--text); background: var(--surface); }
+
+/* ＋ quick-add button inside wizard input-row */
+.wiz-inline-add {
+  background: none;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  font-size: 18px;
+  line-height: 1;
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 6px;
+  transition: background 0.1s;
+}
+.wiz-inline-add:active { background: var(--accent-dim); }
 
 .date-input {
   background: transparent;

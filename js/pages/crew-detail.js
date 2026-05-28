@@ -95,11 +95,22 @@ function _paintDetail(root, person, stats, flights) {
       ${_infoRow('#', 'Employee ID',    person.employeeId    || '—')}
       ${_infoRow('📋', 'Licence No.',   person.licenceNumber || '—')}
       ${_infoRow('🌏', 'Nationality',   person.nationality   || '—')}
-      ${_infoRow('●', 'Status',
-        `<span class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}" style="font-size:10px">
-          ${active ? 'Active' : 'Inactive'}
-        </span>`
-      )}
+    </div>
+
+    <!-- Active toggle -->
+    <div class="cd-section" style="padding:0 16px">
+      <div class="hub-toggle-row" id="cd-active-toggle" data-active="${active}">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}"
+                id="cd-status-badge" style="font-size:10px">
+            ${active ? 'Active' : 'Inactive'}
+          </span>
+          <span style="font-size:14px;color:var(--text-dim)" id="cd-active-label">
+            ${active ? '目前出勤中' : '暫時停用'}
+          </span>
+        </div>
+        <div class="hub-toggle-switch ${active ? 'on' : ''}"></div>
+      </div>
     </div>
 
     <!-- Flights together -->
@@ -116,6 +127,38 @@ function _paintDetail(root, person, stats, flights) {
     }
     <div style="height:32px"></div>
   `
+
+  // Active toggle
+  const toggleRow    = scroll.querySelector('#cd-active-toggle')
+  const toggleSwitch = scroll.querySelector('.hub-toggle-switch')
+  const toggleLabel  = scroll.querySelector('#cd-active-label')
+  const statusBadge  = scroll.querySelector('#cd-status-badge')
+  let   _active      = active
+
+  toggleRow?.addEventListener('click', async () => {
+    _active = !_active
+    toggleRow.dataset.active = _active
+    toggleSwitch?.classList.toggle('on', _active)
+    if (toggleLabel) toggleLabel.textContent = _active ? '目前出勤中' : '暫時停用'
+    if (statusBadge) {
+      statusBadge.className = `hub-status-badge ${_active ? 'badge-active' : 'badge-inactive'}`
+      statusBadge.style.fontSize = '10px'
+      statusBadge.textContent = _active ? 'Active' : 'Inactive'
+    }
+    try {
+      const { id: _id, ...personData } = person
+      await saveCrew(state.user.uid, person.id, { ...personData, active: _active })
+      const idx = state.crew.findIndex(c => c.id === person.id)
+      if (idx >= 0) state.crew[idx].active = _active
+      showToast(_active ? '已設為 Active' : '已設為 Inactive', 'success')
+    } catch (e) {
+      _active = !_active
+      toggleRow.dataset.active = _active
+      toggleSwitch?.classList.toggle('on', _active)
+      if (toggleLabel) toggleLabel.textContent = _active ? '目前出勤中' : '暫時停用'
+      showToast('儲存失敗', 'error')
+    }
+  })
 
   // Edit button
   root.querySelector('#btn-edit')?.addEventListener('click', () => {
