@@ -172,6 +172,31 @@ function detailRow(key, val, cls = '') {
 
 // ── Track / Map ────────────────────────────────
 
+// 產生「在外部平台查看」連結 HTML
+function externalTrackLinks(f, icao24 = '') {
+  const fn   = (f.flightNumber || '').replace(/\s/g, '')
+  const date = f.date || ''
+  const fr24 = fn && date
+    ? `https://www.flightradar24.com/${fn}/${date}`
+    : `https://www.flightradar24.com/`
+  const osn  = icao24
+    ? `https://opensky-network.org/aircraft-profile?icao24=${icao24}`
+    : ''
+  return `
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px">
+      <a href="${fr24}" target="_blank" rel="noopener"
+         style="font-size:12px;padding:6px 14px;border-radius:8px;
+                background:var(--surface2);color:var(--accent);text-decoration:none">
+        FlightRadar24 ↗
+      </a>
+      ${osn ? `<a href="${osn}" target="_blank" rel="noopener"
+         style="font-size:12px;padding:6px 14px;border-radius:8px;
+                background:var(--surface2);color:var(--text-dim);text-decoration:none">
+        OpenSky ↗
+      </a>` : ''}
+    </div>`
+}
+
 async function tryFetchTrack(root, f) {
   const wrap = root.querySelector('#track-map-wrap')
   if (!wrap) return
@@ -189,17 +214,18 @@ async function tryFetchTrack(root, f) {
 
   const doFetch = async (ic) => {
     wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
-      ⏳ 查詢 OpenSky 軌跡中…
+      ⏳ 查詢軌跡中…
     </div>`
 
     const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
 
-    // OpenSky free tier retains only 30 days of history
+    // Over 30 days → skip API, show links only
     if ((Date.now() / 1000 - begin) > 30 * 86400) {
-      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-        歷史資料超過 30 天<br>
-        <span style="color:var(--text-faint);font-size:11px">OpenSky 免費 API 僅保留近 30 天軌跡</span>
-      </div>`
+      wrap.innerHTML = `
+        <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:16px 20px 8px">
+          歷史資料超過 30 天，無法自動載入
+        </div>
+        ${externalTrackLinks(f, ic)}`
       return
     }
 
@@ -208,10 +234,12 @@ async function tryFetchTrack(root, f) {
       renderMap(root, track)
       renderCharts(root, track)
     } else {
-      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-        查無軌跡資料<br>
-        <span style="color:var(--text-faint);font-size:11px">ICAO24: ${ic}</span>
-      </div>`
+      wrap.innerHTML = `
+        <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:16px 20px 4px">
+          自動軌跡查無資料
+          <div style="color:var(--text-faint);font-size:11px;margin-top:2px">ICAO24: ${ic}</div>
+        </div>
+        ${externalTrackLinks(f, ic)}`
     }
   }
 
@@ -236,10 +264,12 @@ async function tryFetchTrack(root, f) {
       }
     } catch (_) {}
     // hexdb.io 查無資料
-    wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-      查無此機號的 ICAO24 資料<br>
-      <span style="color:var(--text-faint);font-size:11px">${f.registration}</span>
-    </div>`
+    wrap.innerHTML = `
+      <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:16px 20px 4px">
+        查無此機號的 ICAO24 資料
+        <div style="color:var(--text-faint);font-size:11px;margin-top:2px">${f.registration}</div>
+      </div>
+      ${externalTrackLinks(f)}`
   }
 }
 
