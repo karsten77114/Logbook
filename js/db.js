@@ -200,3 +200,15 @@ export async function saveCrew(uid, crewId, data) {
 export async function deleteCrew(uid, crewId) {
   await deleteDoc(doc(db(), 'users', uid, 'crew', crewId))
 }
+
+// ── Aircraft Settings ─────────────────────────
+// 儲存使用者自訂的飛機 active/inactive 狀態
+
+export async function getAircraftSettings(uid) {
+  const snap = await getDoc(doc(db(), 'users', uid, 'meta', 'aircraft'))
+  return snap.exists() ? (snap.data().settings || {}) : {}
+}
+
+export async function saveAircraftSettings(uid, settings) {
+  await setDoc(doc(db(), 'users', uid, 'meta', 'aircraft'), { settings })
+}

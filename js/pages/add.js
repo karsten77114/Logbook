@@ -11,6 +11,10 @@ import { calcNightTime }           from '../utils/nighttime.js'
 import { APPROACH_TYPES,
          ALL_REGISTRATIONS,
          getTypeByReg }            from '../data/fleet.js'
+import { ALL_AIRPORT_CODES,
+         lookupAirport }           from '../data/airports.js'
+import { isAircraftActive,
+         isCrewActive }            from '../state.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
@@ -96,6 +100,18 @@ export function renderAdd(root) {
   ;['f-fn', 'f-from', 'f-to'].forEach(id => {
     root.querySelector(`#${id}`)?.addEventListener('input', e => {
       e.target.value = e.target.value.toUpperCase()
+    })
+  })
+
+  // ── Step 1 — airport auto-lookup on blur ─────
+  // 若輸入的 IATA 不在內建表，背景查 Worker，補座標後重算 Night Time
+  ;['f-from', 'f-to'].forEach(id => {
+    root.querySelector(`#${id}`)?.addEventListener('blur', async e => {
+      const code = (e.target.value || '').toUpperCase().trim()
+      if (code.length !== 3) return
+      const result = await lookupAirport(code)
+      // If coords were newly fetched (not in built-in), recalc night time
+      if (result) recalc()
     })
   })
 
@@ -229,9 +245,10 @@ function closeSheet(sheetEl) {
 
 function renderSheetList(listEl, crewSlots, slotIdx, query) {
   if (!listEl) return
-  const q      = (query || '').toLowerCase().trim()
-  const crew   = state.crew || []
-  const list   = q ? crew.filter(c =>
+  const q    = (query || '').toLowerCase().trim()
+  // 只顯示 Active 機師（搜尋時也只在 Active 裡找）
+  const crew = (state.crew || []).filter(c => isCrewActive(c))
+  const list = q ? crew.filter(c =>
     `${c.firstName} ${c.lastName}`.toLowerCase().includes(q)
   ) : crew
 
@@ -424,6 +441,7 @@ function buildHTML(form) {
     </div>
 
     ${crewSheetHtml()}
+    ${airportDatalistHtml()}
   `
 }
 
@@ -459,7 +477,7 @@ function step1Html(form) {
         <div class="row-lbl">From</div>
         <input class="inline-input" id="f-from" type="text"
                placeholder="TPE" value="${form.from}"
-               maxlength="4" autocomplete="off" autocapitalize="characters">
+               maxlength="4" list="airport-list" autocomplete="off" autocapitalize="characters">
       </div>
 
       <div class="input-row">
@@ -467,7 +485,7 @@ function step1Html(form) {
         <div class="row-lbl">To</div>
         <input class="inline-input" id="f-to" type="text"
                placeholder="NRT" value="${form.to}"
-               maxlength="4" autocomplete="off" autocapitalize="characters">
+               maxlength="4" list="airport-list" autocomplete="off" autocapitalize="characters">
       </div>
     </div>`
 }
@@ -524,7 +542,9 @@ function step2Html(form) {
 // ── Step 3: Aircraft ──────────────────────────
 
 function step3Html(form) {
-  const regOptions = ALL_REGISTRATIONS.map(r => {
+  // 只顯示 Active 飛機（在 Airplanes sub-section 標記為 Active 的）
+  const activeRegs = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
+  const regOptions = activeRegs.map(r => {
     const type = getTypeByReg(r)
     const sel  = r === form.registration ? ' selected' : ''
     return `<option value="${r}"${sel}>${r} — ${type}</option>`
@@ -692,4 +712,13 @@ function minHm(min) {
 function initials2(person) {
   if (!person) return '?'
   return `${person.firstName?.[0] || ''}${person.lastName?.[0] || ''}`.toUpperCase() || '?'
+}
+
+// ── Airport Datalist ──────────────────────────
+
+function airportDatalistHtml() {
+  const options = ALL_AIRPORT_CODES.map(code =>
+    `<option value="${code}">`
+  ).join('')
+  return `<datalist id="airport-list">${options}</datalist>`
 }

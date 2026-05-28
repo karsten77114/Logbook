@@ -5,8 +5,10 @@ import { initFirebase, onAuth,
          handleRedirectResult }  from './auth.js'
 import { initDb }                from './db.js'
 import { state, setUser,
-         setProfile, setCrew }   from './state.js'
-import { getProfile, getCrew }   from './db.js'
+         setProfile, setCrew,
+         setAircraftSettings }   from './state.js'
+import { getProfile, getCrew,
+         getAircraftSettings }   from './db.js'
 import { renderLogin }           from './pages/login.js'
 import { renderDashboard }       from './pages/dashboard.js'
 import { renderList }            from './pages/list.js'
@@ -59,12 +61,14 @@ async function init() {
 }
 
 async function loadUserData(uid) {
-  const [profile, crew] = await Promise.all([
+  const [profile, crew, aircraftSettings] = await Promise.all([
     getProfile(uid).catch(() => null),
     getCrew(uid).catch(() => []),
+    getAircraftSettings(uid).catch(() => ({})),
   ])
-  if (profile) setProfile(profile)
-  if (crew)    setCrew(crew)
+  if (profile)          setProfile(profile)
+  if (crew)             setCrew(crew)
+  if (aircraftSettings) setAircraftSettings(aircraftSettings)
 }
 
 // ── Router ────────────────────────────────────
