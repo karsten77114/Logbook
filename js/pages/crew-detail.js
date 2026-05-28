@@ -65,10 +65,19 @@ function _paintDetail(root, person, stats, flights) {
     byYear[yr].push(f)
   })
 
+  // Build flag or person-icon for avatar
+  const _natCc = (person.nationality || '').toUpperCase().trim()
+  const _flag  = (_natCc.length === 2 && /^[A-Z]{2}$/.test(_natCc))
+    ? [..._natCc].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+    : null
+  const _avatarHtml = _flag
+    ? `<div class="cd-avatar" style="font-size:40px;background:none;border:none;box-shadow:none">${_flag}</div>`
+    : `<div class="cd-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>`
+
   scroll.innerHTML = `
     <!-- Profile card -->
     <div class="cd-profile-card">
-      <div class="cd-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
+      ${_avatarHtml}
       <div class="cd-name">${person.firstName} ${person.lastName}</div>
       <div class="cd-position">${person.position || '—'}</div>
       <div class="cd-stats-row">

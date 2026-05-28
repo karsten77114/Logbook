@@ -284,7 +284,7 @@ function renderSheetList(listEl, crewSlots, slotIdx, query) {
   listEl.innerHTML = list.map(c => {
     const checked  = c.id === currentId
     return `<div class="sheet-crew-item" data-id="${c.id}">
-      <div class="sci-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
+      ${crewAvatarHtml(c, 16)}
       <div class="sci-name">${c.firstName} ${c.lastName}
         <span style="font-size:11px;color:var(--text-dim);display:block">${c.position || ''}</span>
       </div>
@@ -590,12 +590,14 @@ function step3Html(form) {
       <div class="input-row">
         <span class="row-icon">🪪</span>
         <div class="row-lbl">Registration</div>
-        <select class="inline-select" id="f-reg" style="flex:1">
-          <option value="">—</option>
-          ${regOptions}
-          ${customOptions}
-        </select>
-        <button class="wiz-inline-add" id="btn-add-ac" title="Add Aircraft">＋</button>
+        <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0">
+          <select class="inline-select" id="f-reg" style="flex:1;min-width:0">
+            <option value="">—</option>
+            ${regOptions}
+            ${customOptions}
+          </select>
+          <button class="wiz-inline-add" id="btn-add-ac" title="Add Aircraft" style="margin-left:0">＋</button>
+        </div>
       </div>
 
       <div class="input-row">
@@ -741,6 +743,23 @@ function initials2(person) {
   return `${person.firstName?.[0] || ''}${person.lastName?.[0] || ''}`.toUpperCase() || '?'
 }
 
+/** Convert 2-letter ISO country code to flag emoji, or return null */
+function flagEmoji(cc) {
+  if (!cc || cc.length !== 2) return null
+  const c = cc.toUpperCase()
+  if (!/^[A-Z]{2}$/.test(c)) return null
+  return [...c].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+}
+
+/** Flag circle if nationality set, otherwise SVG person icon */
+function crewAvatarHtml(person, size = 16) {
+  const flag = flagEmoji(person?.nationality)
+  if (flag) {
+    return `<div class="sci-avatar" style="font-size:20px;background:none;border:none;overflow:visible">${flag}</div>`
+  }
+  return `<div class="sci-avatar"><svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>`
+}
+
 // ── Aircraft Quick-Add ─────────────────────────
 
 function showAircraftQuickAdd(root, form) {
@@ -826,6 +845,23 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
           ).join('')}
         </select>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Employee ID</label>
+          <input class="form-input mono" id="qc-empid" type="text" placeholder="12345">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Licence No.</label>
+          <input class="form-input mono" id="qc-lic" type="text" placeholder="ATPL-001">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nationality (ISO code)</label>
+        <input class="form-input mono" id="qc-nat" type="text"
+               placeholder="TW / US / JP…" maxlength="2"
+               autocapitalize="characters" autocomplete="off"
+               style="width:90px;text-transform:uppercase">
+      </div>
       <button class="btn btn-primary btn-full" id="qc-save">Add</button>
     </div>`
   document.body.appendChild(overlay)
@@ -835,10 +871,18 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
     const first = (overlay.querySelector('#qc-first').value || '').trim()
     const last  = (overlay.querySelector('#qc-last').value  || '').trim()
     const pos   = overlay.querySelector('#qc-pos').value
+    const empId = (overlay.querySelector('#qc-empid').value || '').trim()
+    const lic   = (overlay.querySelector('#qc-lic').value   || '').trim()
+    const nat   = (overlay.querySelector('#qc-nat').value   || '').trim().toUpperCase()
     if (!first && !last) { showToast('Name is required', 'error'); return }
 
     const id   = `crew_${Date.now()}`
-    const data = { firstName: first, lastName: last, position: pos, active: true }
+    const data = {
+      firstName: first, lastName: last, position: pos, active: true,
+      ...(empId && { employeeId: empId }),
+      ...(lic   && { licenceNumber: lic }),
+      ...(nat   && { nationality: nat }),
+    }
     try {
       await saveCrew(state.user.uid, id, data)
       state.crew = [...(state.crew || []), { id, ...data }]

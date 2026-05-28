@@ -407,11 +407,22 @@ function _paintCrewList(root) {
   })
 }
 
+function _flagEmoji(cc) {
+  if (!cc || cc.length !== 2) return null
+  const c = cc.toUpperCase()
+  if (!/^[A-Z]{2}$/.test(c)) return null
+  return [...c].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+}
+
 function crewRowHtml(c) {
-  const active   = isCrewActive(c)
+  const active = isCrewActive(c)
+  const flag   = _flagEmoji(c.nationality)
+  const avatarInner = flag
+    ? `<span style="font-size:22px">${flag}</span>`
+    : `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg>`
   return `
     <div class="hub-row" data-crew-id="${c.id}">
-      <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
+      <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}">${avatarInner}</div>
       <div class="hub-row-info">
         <div class="hub-row-name">${c.firstName || ''} ${c.lastName || ''}</div>
         <div class="hub-row-sub">${c.position || '—'}</div>

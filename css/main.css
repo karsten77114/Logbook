@@ -478,13 +478,13 @@ html, body {
 .step-lbl.active { color: var(--accent); }
 .step-lbl.done   { color: var(--green); }
 
-/* viewport 層：clip 住橫向溢出，佔剩餘高度 */
+/* viewport 層：不撐滿全部剩餘高度，讓 step-nav 緊跟內容 */
 .wizard-steps-port {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
   position: relative;
-  /* iOS Safari fix: 強制合成層，確保 overflow:hidden clip 子層 will-change:transform */
+  /* iOS Safari fix */
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
 }
@@ -492,21 +492,24 @@ html, body {
 /* slider 層：橫向排列所有步驟，transform 在這 */
 .wizard-steps {
   display: flex;
-  width: 100%;        /* 必須！讓 translateX(-100%) = port 寬度 */
-  height: 100%;
+  width: 100%;
+  height: auto;
+  align-items: flex-start;
   transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
   will-change: transform;
 }
 
 .wizard-step {
   min-width: 100%;
-  max-width: 100%;           /* 防止內容撐寬超出 port */
-  width: 100%;               /* flex item 明確寬度 */
-  height: 100%;
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  /* cap height so long steps can scroll */
+  max-height: calc(100svh - var(--safe-top) - var(--safe-bot) - 170px);
   overflow-y: auto;
-  overflow-x: hidden;        /* 不讓橫向內容外洩 */
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 20px 32px;
+  padding: 4px 20px 16px;
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -892,7 +895,7 @@ html, body {
   display: flex; gap: 10px;
   padding: 12px 20px;
   padding-bottom: max(20px, var(--safe-bot));
-  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  background: var(--bg);
   flex-shrink: 0;
 }
 .btn-wiz-back {
