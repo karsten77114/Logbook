@@ -1,16 +1,18 @@
 // ══════════════════════════════════════════════
 // Airplane Detail — 統計 + 航班歷史
 // ══════════════════════════════════════════════
-import { getAllFlights, saveAircraftSettings } from '../db.js'
+import { getAllFlights, saveAircraftSettings,
+         saveCustomAircraft }                  from '../db.js'
 import { state, setAircraftSettings,
-         isAircraftActive }                    from '../state.js'
+         setCustomAircraft, isAircraftActive } from '../state.js'
 import { navigate, showToast }                 from '../app.js'
 import { fmtDuration }                         from '../utils/time.js'
 import { FLEET }                               from '../data/fleet.js'
 
 export async function renderAirplaneDetail(root, params) {
-  const reg  = params[0]
-  const info = FLEET[reg]
+  const reg    = decodeURIComponent(params[0] || '')
+  const info   = FLEET[reg] || (state.customAircraft || []).find(a => a.reg === reg)
+  const custom = !FLEET[reg] && !!info
   if (!reg || !info) { navigate('list'); return }
 
   // Loading shell
@@ -19,7 +21,10 @@ export async function renderAirplaneDetail(root, params) {
       <div class="topbar">
         <button class="topbar-action btn-back" id="btn-back">‹</button>
         <div class="topbar-title mono" style="letter-spacing:0.05em">${reg}</div>
-        <div style="width:44px"></div>
+        ${custom
+          ? `<button class="topbar-action" id="btn-edit-ac" style="font-size:14px;letter-spacing:0.04em;color:var(--accent)">Edit</button>`
+          : `<div style="width:44px"></div>`
+        }
       </div>
       <div class="scroll" id="ad-scroll">
         <div class="list-loading"><div class="loader"></div></div>
@@ -27,6 +32,10 @@ export async function renderAirplaneDetail(root, params) {
     </div>`
 
   root.querySelector('#btn-back').addEventListener('click', () => navigate('list'))
+
+  root.querySelector('#btn-edit-ac')?.addEventListener('click', () => {
+    _showAircraftEditSheet(root, reg, info)
+  })
 
   try {
     const allFlights = await getAllFlights(state.user.uid)
@@ -45,7 +54,7 @@ export async function renderAirplaneDetail(root, params) {
     })
 
     const stats = { sectors, blockMin, airports: airports.size }
-    _paintDetail(root, reg, info, stats, together)
+    _paintDetail(root, reg, info, stats, together, custom)
   } catch (e) {
     root.querySelector('#ad-scroll').innerHTML = `
       <div class="empty-state">
@@ -56,7 +65,7 @@ export async function renderAirplaneDetail(root, params) {
   }
 }
 
-function _paintDetail(root, reg, info, stats, flights) {
+function _paintDetail(root, reg, info, stats, flights, isCustom = false) {
   const scroll = root.querySelector('#ad-scroll')
   const active = isAircraftActive(reg)
 
@@ -200,3 +209,81 @@ function _flightRowHtml(f) {
 }
 
 const _MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+// ── Edit sheet for custom aircraft ────────────
+
+function _showAircraftEditSheet(root, reg, info) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Edit Aircraft</div>
+
+      <div class="form-group">
+        <label class="form-label">Registration</label>
+        <input class="form-input mono" id="ae-reg" type="text"
+               value="${info.reg || reg}" readonly style="opacity:0.6">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Aircraft Type</label>
+        <input class="form-input mono" id="ae-type" type="text"
+               value="${info.type || ''}" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Airline / Operator</label>
+        <input class="form-input" id="ae-airline" type="text"
+               value="${info.airline || ''}" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">MSN (optional)</label>
+        <input class="form-input mono" id="ae-msn" type="text"
+               value="${info.msn || ''}" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">ICAO24 hex (optional)</label>
+        <input class="form-input mono" id="ae-icao24" type="text"
+               value="${info.icao24 || ''}" maxlength="6" autocomplete="off">
+      </div>
+      <button class="btn btn-primary btn-full" id="ae-save">Save Changes</button>
+      <button class="btn btn-danger btn-full" id="ae-del">Delete Aircraft</button>
+    </div>`
+  document.body.appendChild(overlay)
+
+  overlay.querySelector('#ae-save').addEventListener('click', async () => {
+    const type    = (overlay.querySelector('#ae-type').value    || '').trim()
+    const airline = (overlay.querySelector('#ae-airline').value || '').trim()
+    const msn     = (overlay.querySelector('#ae-msn').value     || '').trim()
+    const icao24  = (overlay.querySelector('#ae-icao24').value  || '').trim().toLowerCase()
+    if (!type) { showToast('Type is required', 'error'); return }
+
+    const updated = (state.customAircraft || []).map(a =>
+      a.reg === reg ? { reg, type, airline, msn, icao24 } : a
+    )
+    try {
+      await saveCustomAircraft(state.user.uid, updated)
+      setCustomAircraft(updated)
+      overlay.remove()
+      showToast('Updated', 'success')
+      navigate('airplane-detail/' + encodeURIComponent(reg))
+    } catch (e) {
+      showToast('Save failed', 'error')
+    }
+  })
+
+  overlay.querySelector('#ae-del').addEventListener('click', async () => {
+    if (!confirm(`Delete ${reg}? This will not delete existing flight records.`)) return
+    const updated = (state.customAircraft || []).filter(a => a.reg !== reg)
+    try {
+      await saveCustomAircraft(state.user.uid, updated)
+      setCustomAircraft(updated)
+      overlay.remove()
+      navigate('list')
+      showToast('Deleted', 'success')
+    } catch (e) {
+      showToast('Delete failed', 'error')
+    }
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+}

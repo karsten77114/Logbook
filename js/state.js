@@ -8,6 +8,7 @@ export const state = {
   career:  [],     // career records
   crew:    [],     // crew members from Firestore
   aircraftSettings: {}, // { [reg]: { active: bool } }
+  customAircraft: [],   // [{ reg, type, airline, msn, icao24 }]
 
   // list page cache
   flights:     [],
@@ -23,6 +24,7 @@ export function setProfile(p)            { state.profile          = p }
 export function setCareer(c)             { state.career           = c }
 export function setCrew(c)               { state.crew             = c }
 export function setAircraftSettings(s)   { state.aircraftSettings = s }
+export function setCustomAircraft(a)     { state.customAircraft   = a }
 
 /** 判斷某架飛機是否 active（預設 true）*/
 export function isAircraftActive(reg) {

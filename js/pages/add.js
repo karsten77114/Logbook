@@ -564,9 +564,12 @@ function step2Html(form) {
 // ── Step 3: Aircraft ──────────────────────────
 
 function step3Html(form) {
-  // 顯示 Active 飛機 + localStorage 自訂機號
+  // 顯示 Active 飛機 + 自訂機號（Firestore + localStorage fallback）
   const activeRegs   = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
-  const customAC     = getCustomAircraft()
+  const customAC     = [
+    ...(state.customAircraft || []),
+    ...getCustomAircraft().filter(lc => !(state.customAircraft || []).find(fc => fc.reg === lc.reg)),
+  ]
   const regOptions   = activeRegs.map(r => {
     const type = getTypeByReg(r)
     const sel  = r === form.registration ? ' selected' : ''

@@ -6,9 +6,11 @@ import { initFirebase, onAuth,
 import { initDb }                from './db.js'
 import { state, setUser,
          setProfile, setCrew,
-         setAircraftSettings }   from './state.js'
+         setAircraftSettings,
+         setCustomAircraft }     from './state.js'
 import { getProfile, getCrew,
-         getAircraftSettings }   from './db.js'
+         getAircraftSettings,
+         getCustomAircraft }     from './db.js'
 import { renderLogin }           from './pages/login.js'
 import { renderDashboard }       from './pages/dashboard.js'
 import { renderList }            from './pages/list.js'
@@ -63,14 +65,16 @@ async function init() {
 }
 
 async function loadUserData(uid) {
-  const [profile, crew, aircraftSettings] = await Promise.all([
+  const [profile, crew, aircraftSettings, customAircraft] = await Promise.all([
     getProfile(uid).catch(() => null),
     getCrew(uid).catch(() => []),
     getAircraftSettings(uid).catch(() => ({})),
+    getCustomAircraft(uid).catch(() => []),
   ])
   if (profile)          setProfile(profile)
   if (crew)             setCrew(crew)
   if (aircraftSettings) setAircraftSettings(aircraftSettings)
+  setCustomAircraft(customAircraft || [])
 }
 
 // ── Router ────────────────────────────────────

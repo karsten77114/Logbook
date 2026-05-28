@@ -4,9 +4,10 @@
 import { getFlights, getAllFlights,
          getCareer, saveCareer,
          getCrew, saveCrew, deleteCrew,
-         getAircraftSettings, saveAircraftSettings } from '../db.js'
+         getAircraftSettings, saveAircraftSettings,
+         getCustomAircraft, saveCustomAircraft }     from '../db.js'
 import { state, setCareer, setCrew,
-         setAircraftSettings,
+         setAircraftSettings, setCustomAircraft,
          isAircraftActive, isCrewActive }            from '../state.js'
 import { fmtDate, fmtDuration }                      from '../utils/time.js'
 import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
@@ -188,7 +189,7 @@ function renderSection(root) {
   const topAdd   = root.querySelector('#hub-top-add')
 
   const isFlights   = _section === 'flights'
-  const hasTopAdd   = _section === 'crew' || _section === 'experience'
+  const hasTopAdd   = _section === 'crew' || _section === 'experience' || _section === 'airplanes'
   if (statsEl)  statsEl.style.display  = isFlights ? '' : 'none'
   if (searchEl) searchEl.style.display = isFlights ? '' : 'none'
   if (fab)      fab.style.display      = isFlights ? '' : 'none'
@@ -579,6 +580,20 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
 // ══════════════════════════════════════════════
 
 function renderAirplanesSection(root) {
+  const topAdd = root.querySelector('#hub-top-add')
+  if (topAdd) {
+    topAdd.onclick = () => showAirplaneEditSheet(root, null, async data => {
+      const existing = state.customAircraft || []
+      if (existing.find(a => a.reg === data.reg)) {
+        showToast('Registration already exists', 'error'); return
+      }
+      const updated = [...existing, data]
+      await saveCustomAircraft(state.user.uid, updated)
+      setCustomAircraft(updated)
+      _paintAirplaneList(root)
+      showToast('Aircraft added', 'success')
+    })
+  }
   _paintAirplaneList(root)
 }
 
@@ -586,24 +601,34 @@ function _paintAirplaneList(root) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
 
-  // Group by type
+  // Built-in fleet grouped by type
   const byType = {}
   for (const reg of ALL_REGISTRATIONS) {
     const info = FLEET[reg]
     if (!info) continue
     const type = info.type || '—'
     if (!byType[type]) byType[type] = []
-    byType[type].push({ reg, ...info })
+    byType[type].push({ reg, ...info, custom: false })
   }
 
-  scroll.innerHTML = Object.entries(byType).map(([type, planes]) => `
+  const fleetHtml = Object.entries(byType).map(([type, planes]) => `
     <div class="hub-section-label">${type}</div>
     <div class="hub-list">
       ${planes.map(p => airplaneRowHtml(p)).join('')}
     </div>
   `).join('')
 
-  // Tap → navigate to detail page
+  // Custom aircraft
+  const custom = state.customAircraft || []
+  const customHtml = custom.length > 0 ? `
+    <div class="hub-section-label" style="margin-top:12px">Custom Aircraft (${custom.length})</div>
+    <div class="hub-list">
+      ${custom.map(p => airplaneRowHtml({ ...p, custom: true })).join('')}
+    </div>
+  ` : ''
+
+  scroll.innerHTML = fleetHtml + customHtml
+
   scroll.querySelectorAll('[data-reg]').forEach(row => {
     row.addEventListener('click', () => {
       navigate('airplane-detail/' + row.dataset.reg)
@@ -614,17 +639,95 @@ function _paintAirplaneList(root) {
 function airplaneRowHtml(p) {
   const active = isAircraftActive(p.reg)
   return `
-    <div class="hub-row" data-reg="${p.reg}">
+    <div class="hub-row" data-reg="${encodeURIComponent(p.reg)}">
       <div class="hub-row-avatar hub-plane-avatar" style="${active ? '' : 'opacity:0.4'}">✈</div>
       <div class="hub-row-info">
         <div class="hub-row-name mono">${p.reg}</div>
-        <div class="hub-row-sub">${p.type} · ${p.airline || ''}</div>
+        <div class="hub-row-sub">${p.type}${p.airline ? ' · ' + p.airline : ''}${p.custom ? ' · Custom' : ''}</div>
       </div>
       <div class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}">
         ${active ? 'Active' : 'Inactive'}
       </div>
       <span style="color:var(--text-faint);font-size:18px;margin-left:4px">›</span>
     </div>`
+}
+
+function showAirplaneEditSheet(root, aircraft, onSave, onDelete) {
+  const a     = aircraft || {}
+  const isNew = !aircraft
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">${isNew ? 'Add Aircraft' : 'Edit Aircraft'}</div>
+
+      <div class="form-group">
+        <label class="form-label">Registration</label>
+        <input class="form-input mono" id="ap-reg" type="text"
+               value="${a.reg || ''}" autocapitalize="characters"
+               autocomplete="off" ${!isNew ? 'readonly style="opacity:0.6"' : ''}>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Aircraft Type</label>
+        <input class="form-input mono" id="ap-type" type="text"
+               value="${a.type || ''}" placeholder="e.g. A321-252NX"
+               autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Airline / Operator</label>
+        <input class="form-input" id="ap-airline" type="text"
+               value="${a.airline || ''}" placeholder="e.g. Starlux Airlines"
+               autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">MSN (optional)</label>
+        <input class="form-input mono" id="ap-msn" type="text"
+               value="${a.msn || ''}" placeholder="e.g. 10234"
+               autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">ICAO24 hex (optional)</label>
+        <input class="form-input mono" id="ap-icao24" type="text"
+               value="${a.icao24 || ''}" placeholder="e.g. 899150"
+               maxlength="6" autocomplete="off">
+      </div>
+
+      <button class="btn btn-primary btn-full" id="ap-save">
+        ${isNew ? 'Add Aircraft' : 'Save Changes'}
+      </button>
+      ${!isNew ? `<button class="btn btn-danger btn-full" id="ap-del">Delete Aircraft</button>` : ''}
+    </div>`
+  document.body.appendChild(overlay)
+  if (isNew) setTimeout(() => overlay.querySelector('#ap-reg')?.focus(), 50)
+
+  overlay.querySelector('#ap-reg')?.addEventListener('input', e => {
+    e.target.value = e.target.value.toUpperCase()
+  })
+
+  overlay.querySelector('#ap-save').addEventListener('click', async () => {
+    const reg    = (overlay.querySelector('#ap-reg').value    || '').trim().toUpperCase()
+    const type   = (overlay.querySelector('#ap-type').value   || '').trim()
+    const airline = (overlay.querySelector('#ap-airline').value || '').trim()
+    const msn    = (overlay.querySelector('#ap-msn').value    || '').trim()
+    const icao24 = (overlay.querySelector('#ap-icao24').value || '').trim().toLowerCase()
+    if (!reg)  { showToast('Registration is required', 'error'); return }
+    if (!type) { showToast('Aircraft type is required', 'error'); return }
+    const data = { reg, type, airline, msn, icao24 }
+    await onSave(data)
+    overlay.remove()
+  })
+
+  overlay.querySelector('#ap-del')?.addEventListener('click', async () => {
+    overlay.remove()
+    await onDelete()
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
 // ══════════════════════════════════════════════

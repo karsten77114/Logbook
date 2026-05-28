@@ -212,3 +212,14 @@ export async function getAircraftSettings(uid) {
 export async function saveAircraftSettings(uid, settings) {
   await setDoc(doc(db(), 'users', uid, 'meta', 'aircraft'), { settings })
 }
+
+// ── Custom Aircraft ───────────────────────────
+
+export async function getCustomAircraft(uid) {
+  const snap = await getDoc(doc(db(), 'users', uid, 'meta', 'customAircraft'))
+  return snap.exists() ? (snap.data().records || []) : []
+}
+
+export async function saveCustomAircraft(uid, records) {
+  await setDoc(doc(db(), 'users', uid, 'meta', 'customAircraft'), { records })
+}
