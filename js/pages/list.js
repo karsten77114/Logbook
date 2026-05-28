@@ -655,9 +655,10 @@ function _paintAirplaneList(root) {
   for (const reg of ALL_REGISTRATIONS) {
     const info = FLEET[reg]
     if (!info) continue
-    const type = info.type || '—'
+    if (state.aircraftSettings?.[reg]?.deleted) continue
+    const type = state.aircraftSettings?.[reg]?.typeOverride || info.type || '—'
     if (!byType[type]) byType[type] = []
-    byType[type].push({ reg, ...info })
+    byType[type].push({ reg, ...info, type })
   }
 
   const customAC = state.customAircraft || []

@@ -58,8 +58,9 @@ export async function renderAirplaneDetail(root, params) {
 }
 
 function _paintDetail(root, reg, info, stats, flights) {
-  const scroll = root.querySelector('#ad-scroll')
-  const active = isAircraftActive(reg)
+  const scroll       = root.querySelector('#ad-scroll')
+  const active       = isAircraftActive(reg)
+  const displayType  = state.aircraftSettings?.[reg]?.typeOverride || info.type
 
   // Group flights by year
   const byYear = {}
@@ -74,7 +75,7 @@ function _paintDetail(root, reg, info, stats, flights) {
     <div class="cd-profile-card">
       <div class="cd-avatar ad-plane-icon">✈</div>
       <div class="cd-name mono" style="letter-spacing:0.06em">${reg}</div>
-      <div class="cd-position">${info.type} · ${info.airline || ''}</div>
+      <div class="cd-position">${displayType} · ${info.airline || ''}</div>
       <div class="cd-stats-row">
         <div class="cd-stat">
           <div class="cd-stat-val">${stats.sectors}</div>
@@ -95,7 +96,7 @@ function _paintDetail(root, reg, info, stats, flights) {
 
     <!-- Info rows -->
     <div class="cd-section">
-      ${_infoRow('✈', 'Aircraft Type', info.type)}
+      <div class="ad-type-row">${_infoRow('✈', 'Aircraft Type', displayType)}</div>
       ${_infoRow('🏢', 'Airline',       info.airline || '—')}
       ${_infoRow('●', 'Status',
         `<span class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}" style="font-size:10px">
@@ -209,7 +210,9 @@ function _showEditSheet(root, reg, info) {
   const existing = document.querySelector('.modal-overlay')
   if (existing) existing.remove()
 
-  const notes = state.aircraftSettings?.[reg]?.notes || ''
+  const saved        = state.aircraftSettings?.[reg] || {}
+  const notes        = saved.notes        || ''
+  const typeOverride = saved.typeOverride || info.type
 
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
@@ -228,8 +231,8 @@ function _showEditSheet(root, reg, info) {
         </div>
         <div class="form-group">
           <div class="form-label">Type</div>
-          <input class="form-input" value="${info.type}" readonly
-                 style="opacity:0.5;width:160px">
+          <input id="ae-type" class="form-input" value="${typeOverride}"
+                 placeholder="${info.type}" style="width:160px">
         </div>
         <div class="form-group">
           <div class="form-label">Notes</div>
@@ -238,26 +241,45 @@ function _showEditSheet(root, reg, info) {
                     style="resize:none;height:100px;width:100%;box-sizing:border-box"
                     >${notes}</textarea>
         </div>
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+          <button id="ae-remove"
+                  style="width:100%;padding:12px;background:transparent;
+                         border:1px solid #e04040;color:#e04040;border-radius:8px;
+                         font-size:14px;cursor:pointer">
+            Remove Aircraft
+          </button>
+        </div>
       </div>
     </div>`
 
   document.body.appendChild(overlay)
-  overlay.querySelector('#ae-notes').focus()
+  overlay.querySelector('#ae-type').focus()
 
   overlay.querySelector('#ae-cancel').addEventListener('click', () => overlay.remove())
 
   overlay.querySelector('#ae-save').addEventListener('click', async () => {
+    const newType  = overlay.querySelector('#ae-type').value.trim() || info.type
     const newNotes = overlay.querySelector('#ae-notes').value.trim()
     const newSettings = {
       ...state.aircraftSettings,
-      [reg]: { ...(state.aircraftSettings?.[reg] || {}), notes: newNotes },
+      [reg]: {
+        ...(state.aircraftSettings?.[reg] || {}),
+        typeOverride: newType !== info.type ? newType : '',
+        notes: newNotes,
+      },
     }
     setAircraftSettings(newSettings)
     try {
       await saveAircraftSettings(state.user.uid, newSettings)
       overlay.remove()
       showToast('Saved', 'success')
-      // Refresh notes row without full re-render
+      // Update profile card subtitle
+      const posEl = root.querySelector('.cd-position')
+      if (posEl) posEl.textContent = `${newType} · ${info.airline || ''}`
+      // Update Aircraft Type info row
+      const typeRow = root.querySelector('.ad-type-row .cd-info-value')
+      if (typeRow) typeRow.textContent = newType
+      // Update notes row
       const section = root.querySelector('.cd-section')
       const existingNotes = section?.querySelector('.ad-notes-row')
       if (section) {
@@ -273,6 +295,24 @@ function _showEditSheet(root, reg, info) {
       }
     } catch (e) {
       showToast('Save failed', 'error')
+      setAircraftSettings(state.aircraftSettings)
+    }
+  })
+
+  overlay.querySelector('#ae-remove').addEventListener('click', async () => {
+    if (!confirm(`Remove "${reg}" from your aircraft list?`)) return
+    const newSettings = {
+      ...state.aircraftSettings,
+      [reg]: { ...(state.aircraftSettings?.[reg] || {}), deleted: true },
+    }
+    setAircraftSettings(newSettings)
+    try {
+      await saveAircraftSettings(state.user.uid, newSettings)
+      overlay.remove()
+      showToast('Aircraft removed', 'success')
+      navigate('list')
+    } catch (e) {
+      showToast('Remove failed', 'error')
       setAircraftSettings(state.aircraftSettings)
     }
   })
