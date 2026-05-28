@@ -15,6 +15,8 @@ import { renderList }            from './pages/list.js'
 import { renderAdd }             from './pages/add.js'
 import { renderDetail }          from './pages/detail.js'
 import { renderSettings }        from './pages/settings.js'
+import { renderCrewDetail }      from './pages/crew-detail.js'
+import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
 const root = document.getElementById('app')
 
@@ -93,12 +95,14 @@ function router() {
   hideSplash()
 
   switch (page) {
-    case 'add':       renderAdd(root, params);       break
-    case 'detail':    renderDetail(root, params);    break
-    case 'settings':  renderSettings(root, params);  break
-    case 'list':      renderList(root, params);      break
+    case 'add':             renderAdd(root, params);            break
+    case 'detail':          renderDetail(root, params);         break
+    case 'settings':        renderSettings(root, params);       break
+    case 'list':            renderList(root, params);           break
+    case 'crew-detail':     renderCrewDetail(root, params);     break
+    case 'airplane-detail': renderAirplaneDetail(root, params); break
     case 'dashboard':
-    default:          renderDashboard(root, params); break
+    default:                renderDashboard(root, params);      break
   }
 }
 

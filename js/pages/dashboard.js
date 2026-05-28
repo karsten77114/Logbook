@@ -46,10 +46,7 @@ function bottomNav() {
         <span class="nav-icon">⊞</span><span>Dashboard</span>
       </button>
       <button class="nav-item" data-nav="list">
-        <span class="nav-icon">≡</span><span>Flights</span>
-      </button>
-      <button class="nav-item" id="fab-nav">
-        <span class="nav-icon" style="font-size:22px">＋</span><span>Add</span>
+        <span class="nav-icon">✈</span><span>Flights</span>
       </button>
       <button class="nav-item" data-nav="settings">
         <span class="nav-icon">⚙</span><span>Settings</span>
@@ -61,7 +58,6 @@ function attachNav(root) {
   root.querySelectorAll('[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => navigate(btn.dataset.nav))
   })
-  root.querySelector('#fab-nav')?.addEventListener('click', () => navigate('add'))
 }
 
 // ── Compute ───────────────────────────────────

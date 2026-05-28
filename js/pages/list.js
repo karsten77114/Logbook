@@ -405,20 +405,7 @@ function _paintCrewList(root) {
 
   scroll.querySelectorAll('[data-crew-id]').forEach(row => {
     row.addEventListener('click', () => {
-      const person = state.crew.find(c => c.id === row.dataset.crewId)
-      if (!person) return
-      showCrewEditSheet(root, person, async data => {
-        await saveCrew(state.user.uid, person.id, data)
-        const idx = state.crew.findIndex(c => c.id === person.id)
-        if (idx >= 0) state.crew[idx] = { id: person.id, ...data }
-        _paintCrewList(root)
-        showToast('已更新', 'success')
-      }, async () => {
-        await deleteCrew(state.user.uid, person.id)
-        state.crew = state.crew.filter(c => c.id !== person.id)
-        _paintCrewList(root)
-        showToast('已刪除', 'success')
-      })
+      navigate('crew-detail/' + row.dataset.crewId)
     })
   })
 }
@@ -548,37 +535,10 @@ function _paintAirplaneList(root) {
     </div>
   `).join('')
 
-  // Tap to toggle active
+  // Tap → navigate to detail page
   scroll.querySelectorAll('[data-reg]').forEach(row => {
-    row.addEventListener('click', async () => {
-      const reg = row.dataset.reg
-      const cur = isAircraftActive(reg)
-      const next = !cur
-
-      const newSettings = {
-        ...state.aircraftSettings,
-        [reg]: { active: next },
-      }
-      setAircraftSettings(newSettings)
-
-      // Optimistic UI update
-      const badge = row.querySelector('.hub-status-badge')
-      const avatar = row.querySelector('.hub-row-avatar')
-      if (badge) {
-        badge.className = `hub-status-badge ${next ? 'badge-active' : 'badge-inactive'}`
-        badge.textContent = next ? 'Active' : 'Inactive'
-      }
-      if (avatar) avatar.style.opacity = next ? '1' : '0.4'
-
-      // Save to Firebase
-      try {
-        await saveAircraftSettings(state.user.uid, newSettings)
-      } catch (e) {
-        showToast('儲存失敗', 'error')
-        // Revert
-        setAircraftSettings({ ...newSettings, [reg]: { active: cur } })
-        _paintAirplaneList(root)
-      }
+    row.addEventListener('click', () => {
+      navigate('airplane-detail/' + row.dataset.reg)
     })
   })
 }

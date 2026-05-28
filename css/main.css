@@ -1900,3 +1900,193 @@ html, body {
   color: var(--accent);
   font-family: var(--font-mono);
 }
+
+/* ══════════════════════════════════════════════
+   Crew Detail & Airplane Detail Pages  (cd-*)
+   ══════════════════════════════════════════════ */
+
+/* Profile card */
+.cd-profile-card {
+  background: var(--surface);
+  margin: 16px 12px 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 24px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.cd-avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.ad-plane-icon {
+  background: var(--card);
+  font-size: 28px;
+}
+
+.cd-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+.cd-position {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* Stats row inside profile card */
+.cd-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 16px;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.cd-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.cd-stat-val {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.cd-stat-val.mono { font-family: var(--font-mono); font-size: 17px; }
+.cd-stat-lbl {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.cd-stat-divider {
+  width: 1px;
+  height: 36px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* Info rows */
+.cd-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  margin: 12px 12px 0;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.cd-info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.cd-info-row:last-child { border-bottom: none; }
+.cd-info-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+.cd-info-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  width: 100px;
+}
+.cd-info-value {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text);
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+/* Section header for flights list */
+.cd-flights-header {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 20px 16px 8px;
+}
+
+/* Year label */
+.cd-year-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 8px 16px 4px;
+}
+
+/* Flight row */
+.cd-flight-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.cd-flight-row:active { background: var(--card-hover); }
+.cd-flight-row:last-child { border-bottom: none; }
+
+.cd-flight-date {
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.cd-flight-day {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.cd-flight-mon {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.cd-flight-route { flex: 1; min-width: 0; }
+.cd-flight-route-main {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+.cd-flight-fn {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.cd-flight-block {
+  font-size: 14px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
