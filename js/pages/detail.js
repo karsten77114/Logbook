@@ -276,11 +276,14 @@ function _bearing(p1, p2) {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
 }
 
+// SVG airplane pointing NORTH (up) at 0° — rotate(hdg) needs no offset on any platform
+const _PLANE_SVG = `<svg viewBox="0 0 20 20" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
+  <path fill="white" d="M10,1 L13,9 L19,11 L19,13 L13,11.5 L13,17 L15,18.5 L15,19.5 L10,18 L5,19.5 L5,18.5 L7,17 L7,11.5 L1,13 L1,11 L7,9 Z"/>
+</svg>`
+
 function _planeIcon(hdg) {
-  // ✈ emoji faces east (90°) by default; subtract 90° to align with north-based bearing
   return L.divIcon({
-    html: `<div style="transform:rotate(${Math.round(hdg - 90)}deg);font-size:20px;line-height:1;
-                       text-shadow:0 0 6px #000,0 0 12px #000;color:#fff">✈</div>`,
+    html: `<div style="transform:rotate(${Math.round(hdg)}deg);line-height:0;filter:drop-shadow(0 0 3px rgba(0,0,0,0.9))">${_PLANE_SVG}</div>`,
     className: 'plane-marker-icon',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
@@ -463,7 +466,7 @@ function initTimeline(root, track, mapObjs, chartObjs) {
     const markerEl = marker.getElement()
     if (markerEl) {
       const div = markerEl.querySelector('div')
-      if (div) div.style.transform = `rotate(${Math.round(hdg - 90)}deg)`
+      if (div) div.style.transform = `rotate(${Math.round(hdg)}deg)`
     }
     flownLine.setLatLngs(track.slice(0, idx + 1).map(p => [p.la, p.lo]))
 
