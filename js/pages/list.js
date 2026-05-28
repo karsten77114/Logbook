@@ -11,6 +11,7 @@ import { state, setCareer, setCrew,
 import { fmtDate, fmtDuration }                      from '../utils/time.js'
 import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
 import { navigate, showToast }                       from '../app.js'
+import { showCountryPicker, getCountryName }         from '../data/countries.js'
 
 // ── Module-level state ────────────────────────
 let _section    = 'flights'  // flights | crew | airplanes | experience
@@ -64,7 +65,7 @@ function buildShell() {
           <span class="hub-chevron" id="hub-chevron">▾</span>
         </button>
         <button class="topbar-action" id="hub-top-add"
-                style="font-size:22px;display:none" title="Add">＋</button>
+                style="font-size:22px;visibility:hidden;pointer-events:none" title="Add">＋</button>
       </div>
 
       <!-- Dropdown -->
@@ -190,7 +191,11 @@ function renderSection(root) {
   if (statsEl)  statsEl.style.display  = isFlights ? '' : 'none'
   if (searchEl) searchEl.style.display = isFlights ? '' : 'none'
   if (fab)      fab.style.display      = isFlights ? '' : 'none'
-  if (topAdd)   topAdd.style.display   = !isFlights ? '' : 'none'
+  if (topAdd) {
+    const showBtn = !isFlights
+    topAdd.style.visibility   = showBtn ? 'visible' : 'hidden'
+    topAdd.style.pointerEvents = showBtn ? '' : 'none'
+  }
 
   // Route to section renderer
   switch (_section) {
@@ -313,10 +318,19 @@ function flightRowHtml(f) {
   const [, mo, d] = (f.date || '').split('-')
   const dateStr   = mo && d ? `${mo}/${d}` : f.date || ''
   const block     = fmtDuration(f.blockTime)
+
+  // PIC: if self is PIC → badge; otherwise show PIC crew name
+  const picBadge = f.pic
+    ? '<span class="badge badge-pic">PIC</span>'
+    : ''
+  const picName  = !f.pic && f.crewNames?.length
+    ? `<span class="flight-row-pic-name">${f.crewNames[0]}</span>`
+    : ''
+
   const badges    = [
     f.pfTakeoff ? '<span class="badge badge-to">T/O</span>'   : '',
     f.pfLanding ? '<span class="badge badge-ldg">LDG</span>'  : '',
-    f.pic       ? '<span class="badge badge-pic">PIC</span>'  : '',
+    picBadge,
     f.nightTime > 0 ? '<span class="badge badge-night">N</span>' : '',
     f.goAround  ? '<span class="badge badge-ga">GA</span>'    : '',
     f.autoland  ? '<span class="badge badge-auto">AUTO</span>': '',
@@ -331,7 +345,7 @@ function flightRowHtml(f) {
           <span class="route-arrow">→</span>
           <span>${f.to   || '???'}</span>
         </div>
-        <div class="flight-row-fn">${f.flightNumber || ''} · ${f.aircraftType || ''}</div>
+        <div class="flight-row-fn">${f.flightNumber || ''} · ${f.aircraftType || ''}${picName ? ' · ' : ''}${picName}</div>
       </div>
       <div class="flight-row-right">
         <div class="flight-row-block mono">${block}</div>
@@ -435,8 +449,20 @@ function crewRowHtml(c) {
 }
 
 function showCrewEditSheet(root, person, onSave, onDelete) {
-  const c       = person || {}
-  const isNew   = !person
+  const c     = person || {}
+  const isNew = !person
+  let _natCode = c.nationality || ''
+
+  const _flagEmoji = code => {
+    if (!code || code.length !== 2) return ''
+    const u = code.toUpperCase()
+    return [...u].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+  }
+
+  const natDisplay = _natCode
+    ? `${_flagEmoji(_natCode)}  ${getCountryName(_natCode)}`
+    : ''
+
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
@@ -458,11 +484,31 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
       <div class="form-group">
         <label class="form-label">Position</label>
         <select class="form-select" id="cr-position">
-          <option value="" ${!c.position ? 'selected' : ''}>— Not set —</option>
+          <option value="" ${!c.position ? 'selected' : ''}>— Select —</option>
           ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}" ${p === c.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
         </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Employee ID</label>
+          <input class="form-input mono" id="cr-empid" type="text" value="${c.employeeId || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Licence No.</label>
+          <input class="form-input mono" id="cr-licence" type="text" value="${c.licenceNumber || ''}">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nationality</label>
+        <button class="form-picker-btn" id="cr-nat-btn" type="button">
+          <span id="cr-nat-display" style="${natDisplay ? '' : 'color:var(--text-faint)'}">
+            ${natDisplay || 'Tap to select…'}
+          </span>
+        </button>
       </div>
 
       <div class="form-group">
@@ -478,8 +524,21 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
     </div>`
   document.body.appendChild(overlay)
 
+  // Nationality picker
+  overlay.querySelector('#cr-nat-btn').addEventListener('click', () => {
+    showCountryPicker(_natCode, (code, name) => {
+      _natCode = code
+      const display = overlay.querySelector('#cr-nat-display')
+      if (display) {
+        const flag = [...code].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+        display.textContent = `${flag}  ${name}`
+        display.style.color = 'var(--text)'
+      }
+    })
+  })
+
   // Active toggle
-  const toggleRow = overlay.querySelector('#cr-active-toggle')
+  const toggleRow    = overlay.querySelector('#cr-active-toggle')
   const toggleSwitch = overlay.querySelector('.hub-toggle-switch')
   const toggleLabel  = overlay.querySelector('#cr-active-label')
   toggleRow?.addEventListener('click', () => {
@@ -491,10 +550,13 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
 
   overlay.querySelector('#crew-save').addEventListener('click', async () => {
     const data = {
-      firstName: overlay.querySelector('#cr-first').value.trim(),
-      lastName:  overlay.querySelector('#cr-last').value.trim(),
-      position:  overlay.querySelector('#cr-position').value,
-      active:    toggleRow?.dataset.active !== 'false',
+      firstName:     overlay.querySelector('#cr-first').value.trim(),
+      lastName:      overlay.querySelector('#cr-last').value.trim(),
+      position:      overlay.querySelector('#cr-position').value,
+      employeeId:    overlay.querySelector('#cr-empid').value.trim(),
+      licenceNumber: overlay.querySelector('#cr-licence').value.trim(),
+      nationality:   _natCode,
+      active:        toggleRow?.dataset.active !== 'false',
     }
     if (!data.firstName && !data.lastName) {
       showToast('Name is required', 'error'); return
@@ -516,8 +578,6 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
 // ══════════════════════════════════════════════
 
 function renderAirplanesSection(root) {
-  const topAdd = root.querySelector('#hub-top-add')
-  if (topAdd) topAdd.style.display = 'none'  // Airplanes list is fixed, no add
   _paintAirplaneList(root)
 }
 

@@ -97,11 +97,10 @@ export const AIRLINES = [
 ]
 
 /**
- * Get tail logo image URL from Airhex CDN
- * Falls back gracefully if image is unavailable
+ * Get tail logo image URL — tries avs.io (free, wide coverage)
  */
 export function getAirlineLogoUrl(iata) {
-  return `https://content.airhex.com/content/logos/airlines_${iata}_100_100_t.png`
+  return `https://pics.avs.io/100/100/${iata}.png`
 }
 
 /**

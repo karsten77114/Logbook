@@ -5,9 +5,12 @@ import { getFlight, deleteFlight, updateFlight } from '../db.js'
 import { state }                                  from '../state.js'
 import { navigate, showToast }                    from '../app.js'
 import { invalidateStats }                        from './list.js'
-import { fmtDate, fmtDuration }                   from '../utils/time.js'
+import { fmtDate, fmtDuration,
+         diffMin, normalizeHm, isValidHm }        from '../utils/time.js'
 import { fetchTrack, getTimeRange }               from '../utils/opensky.js'
-import { FLEET }                                  from '../data/fleet.js'
+import { FLEET, APPROACH_TYPES,
+         ALL_REGISTRATIONS, getTypeByReg }        from '../data/fleet.js'
+import { isAircraftActive }                       from '../state.js'
 
 export async function renderDetail(root, params) {
   const flightId = params[0]
@@ -18,7 +21,10 @@ export async function renderDetail(root, params) {
       <div class="topbar">
         <button class="topbar-action btn-back" id="btn-back">‹</button>
         <div class="topbar-title" id="detail-title">…</div>
-        <button class="topbar-action" id="btn-delete" style="color:var(--red)">⌫</button>
+        <div style="display:flex;gap:4px">
+          <button class="topbar-action" id="btn-edit" style="font-size:14px;letter-spacing:0.04em;color:var(--accent)">Edit</button>
+          <button class="topbar-action" id="btn-delete" style="color:var(--red)">⌫</button>
+        </div>
       </div>
       <div class="scroll" id="detail-scroll">
         <div class="list-loading"><div class="loader"></div></div>
@@ -35,6 +41,11 @@ export async function renderDetail(root, params) {
       `${f.from || '?'} → ${f.to || '?'}`
 
     root.querySelector('#detail-scroll').innerHTML = buildDetailHtml(f)
+
+    // Edit button
+    root.querySelector('#btn-edit').addEventListener('click', () => {
+      showEditSheet(root, f, flightId)
+    })
 
     // Delete button
     root.querySelector('#btn-delete').addEventListener('click', () => {
@@ -604,6 +615,226 @@ async function autoDetectRunway(root, track, destIata, flightId) {
   } catch (e) {
     console.warn('[Runway] Firestore update failed:', e.message)
   }
+}
+
+// ── Edit Sheet ─────────────────────────────────
+
+function _minHm(min) {
+  if (min == null || isNaN(min)) return ''
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return `${h}:${String(m).padStart(2, '0')}`
+}
+
+function showEditSheet(root, f, flightId) {
+  const activeRegs = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
+  const regOptions = activeRegs.map(r => {
+    const type = getTypeByReg(r)
+    const sel  = r === f.registration ? ' selected' : ''
+    return `<option value="${r}"${sel}>${r} — ${type}</option>`
+  }).join('')
+  const approachOptions = APPROACH_TYPES.map(a =>
+    `<option value="${a}" ${a === f.approachType ? 'selected' : ''}>${a}</option>`
+  ).join('')
+
+  const yn = (key) => `
+    <div class="edit-toggle-row" data-key="${key}" data-val="${f[key] ? '1' : '0'}">
+      <span class="edit-toggle-lbl">${key === 'pfTakeoff' ? 'PF Takeoff' :
+                                      key === 'pfLanding' ? 'PF Landing' :
+                                      key === 'pic'       ? 'PIC' :
+                                      key === 'autoland'  ? 'Autoland' :
+                                      key === 'goAround'  ? 'Go-Around' : 'Diverted'}</span>
+      <div class="hub-toggle-switch ${f[key] ? 'on' : ''}"></div>
+    </div>`
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet" style="max-height:90vh;overflow-y:auto">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Edit Flight</div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date (UTC)</label>
+          <input class="form-input" id="ef-date" type="date" value="${f.date || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Flight No.</label>
+          <input class="form-input mono" id="ef-fn" type="text" value="${f.flightNumber || ''}"
+                 autocapitalize="characters" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From</label>
+          <input class="form-input mono" id="ef-from" type="text" value="${f.from || ''}"
+                 maxlength="4" autocapitalize="characters">
+        </div>
+        <div class="form-group">
+          <label class="form-label">To</label>
+          <input class="form-input mono" id="ef-to" type="text" value="${f.to || ''}"
+                 maxlength="4" autocapitalize="characters">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">OUT</label>
+          <input class="form-input mono" id="ef-out" type="text" value="${f.outTime || ''}"
+                 placeholder="HHMM" maxlength="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">OFF</label>
+          <input class="form-input mono" id="ef-off" type="text" value="${f.offTime || ''}"
+                 placeholder="HHMM" maxlength="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ON</label>
+          <input class="form-input mono" id="ef-on" type="text" value="${f.onTime || ''}"
+                 placeholder="HHMM" maxlength="5">
+        </div>
+        <div class="form-group">
+          <label class="form-label">IN</label>
+          <input class="form-input mono" id="ef-in" type="text" value="${f.inTime || ''}"
+                 placeholder="HHMM" maxlength="5">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Night Time</label>
+          <input class="form-input mono" id="ef-night" type="text"
+                 value="${_minHm(f.nightTime)}" placeholder="H:MM">
+        </div>
+        <div class="form-group" style="flex:0;min-width:0"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Registration</label>
+        <select class="form-select" id="ef-reg">
+          <option value="">—</option>
+          ${regOptions}
+          ${f.registration && !activeRegs.includes(f.registration)
+            ? `<option value="${f.registration}" selected>${f.registration}</option>`
+            : ''}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Approach</label>
+          <select class="form-select" id="ef-approach">
+            <option value="">—</option>
+            ${approachOptions}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Runway</label>
+          <input class="form-input mono" id="ef-runway" type="text"
+                 value="${f.runway || ''}" maxlength="4" autocapitalize="characters">
+        </div>
+      </div>
+
+      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);padding:12px 0 8px">Piloting</div>
+      ${['pfTakeoff','pfLanding','pic','autoland','goAround','diverted'].map(yn).join('')}
+
+      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);padding:12px 0 8px">Load</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">PAX</label>
+          <input class="form-input" id="ef-pax" type="number" inputmode="numeric"
+                 value="${f.totalPax || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payload (t)</label>
+          <input class="form-input" id="ef-payload" type="number" inputmode="decimal"
+                 step="0.1" value="${f.totalPayload || ''}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dist (NM)</label>
+          <input class="form-input" id="ef-dist" type="number" inputmode="numeric"
+                 value="${f.flightPlanDistance || ''}">
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" id="ef-save">Save Changes</button>
+    </div>`
+  document.body.appendChild(overlay)
+
+  // Toggle switches
+  overlay.querySelectorAll('.edit-toggle-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const isOn = row.dataset.val === '1'
+      row.dataset.val = isOn ? '0' : '1'
+      row.querySelector('.hub-toggle-switch')?.classList.toggle('on', !isOn)
+    })
+  })
+
+  // Auto-uppercase airports / fn
+  ;['ef-fn','ef-from','ef-to','ef-runway'].forEach(id => {
+    overlay.querySelector(`#${id}`)?.addEventListener('input', e => {
+      e.target.value = e.target.value.toUpperCase()
+    })
+  })
+
+  overlay.querySelector('#ef-save').addEventListener('click', async () => {
+    const outV  = overlay.querySelector('#ef-out').value
+    const inV   = overlay.querySelector('#ef-in').value
+    const offV  = overlay.querySelector('#ef-off').value
+    const onV   = overlay.querySelector('#ef-on').value
+    const nightV = overlay.querySelector('#ef-night').value
+
+    const blockTime  = isValidHm(outV) && isValidHm(inV) ? diffMin(outV, inV) : f.blockTime
+    const flightTime = isValidHm(offV) && isValidHm(onV)  ? diffMin(offV, onV) : f.flightTime
+    const nightTime  = isValidHm(nightV) ? diffMin('0:00', normalizeHm(nightV)) : f.nightTime
+
+    const regVal = overlay.querySelector('#ef-reg').value || f.registration
+    const toggleVals = {}
+    overlay.querySelectorAll('.edit-toggle-row').forEach(row => {
+      toggleVals[row.dataset.key] = row.dataset.val === '1'
+    })
+
+    const changes = {
+      date:               overlay.querySelector('#ef-date').value    || f.date,
+      flightNumber:       (overlay.querySelector('#ef-fn').value    || '').toUpperCase() || f.flightNumber,
+      from:               (overlay.querySelector('#ef-from').value  || '').toUpperCase() || f.from,
+      to:                 (overlay.querySelector('#ef-to').value    || '').toUpperCase() || f.to,
+      outTime:            isValidHm(outV)  ? normalizeHm(outV)  : f.outTime,
+      offTime:            isValidHm(offV)  ? normalizeHm(offV)  : f.offTime,
+      onTime:             isValidHm(onV)   ? normalizeHm(onV)   : f.onTime,
+      inTime:             isValidHm(inV)   ? normalizeHm(inV)   : f.inTime,
+      blockTime,
+      flightTime,
+      nightTime,
+      registration:       regVal,
+      aircraftType:       getTypeByReg(regVal) || f.aircraftType,
+      approachType:       overlay.querySelector('#ef-approach').value,
+      runway:             (overlay.querySelector('#ef-runway').value || '').toUpperCase(),
+      ...toggleVals,
+      totalPax:           parseInt(overlay.querySelector('#ef-pax').value     || '0', 10),
+      totalPayload:       parseFloat(overlay.querySelector('#ef-payload').value || '0'),
+      flightPlanDistance: parseInt(overlay.querySelector('#ef-dist').value    || '0', 10),
+    }
+
+    try {
+      await updateFlight(state.user.uid, flightId, changes)
+      invalidateStats()
+      overlay.remove()
+      showToast('Updated', 'success')
+      // Reload detail page
+      const scroll = root.querySelector('#detail-scroll')
+      const newF   = { ...f, ...changes }
+      if (scroll) scroll.innerHTML = buildDetailHtml(newF)
+      const titleEl = root.querySelector('#detail-title')
+      if (titleEl) titleEl.textContent = `${newF.from || '?'} → ${newF.to || '?'}`
+    } catch (e) {
+      showToast('Save failed', 'error')
+    }
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
 // ── Delete Confirm ─────────────────────────────

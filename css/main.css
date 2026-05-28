@@ -2233,3 +2233,80 @@ html, body {
   font-family: var(--font-mono);
   flex-shrink: 0;
 }
+
+/* ══════════════════════════════════════════════
+   Country Picker
+   ══════════════════════════════════════════════ */
+
+.country-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.country-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.country-row:active { background: var(--card); }
+.country-row-selected { background: var(--card); }
+.country-row-selected .country-name { color: var(--accent); }
+
+.country-flag  { font-size: 24px; width: 32px; text-align: center; flex-shrink: 0; }
+.country-name  { flex: 1; font-size: 15px; color: var(--text); }
+.country-code  { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); }
+.country-check { font-size: 15px; color: var(--accent); font-weight: 700; margin-left: 6px; }
+
+/* ── Form picker button ───────────────────────── */
+.form-picker-btn {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 15px;
+  font-family: var(--font-ui);
+  color: var(--text);
+  cursor: pointer;
+  display: flex; align-items: center;
+  min-height: 44px;
+  transition: border-color 0.15s;
+}
+.form-picker-btn:active { background: var(--card-hover); }
+.form-picker-btn:focus  { outline: none; border-color: var(--accent); }
+
+/* ── Flight row PIC name ─────────────────────── */
+.flight-row-pic-name {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ── Edit sheet toggle rows ──────────────────── */
+.edit-toggle-row {
+  display: flex; align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.edit-toggle-row:last-of-type { border-bottom: none; }
+.edit-toggle-lbl {
+  flex: 1;
+  font-size: 15px;
+  color: var(--text);
+}
+
+/* ── Safe area bottom fill ───────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  background: var(--surface);
+  z-index: 9;
+  pointer-events: none;
+}
