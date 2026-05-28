@@ -579,7 +579,59 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
 // ══════════════════════════════════════════════
 
 function renderAirplanesSection(root) {
+  const topAdd = root.querySelector('#hub-top-add')
+  if (topAdd) {
+    topAdd.style.display = ''
+    topAdd.onclick = () => showAircraftAddSheet(root)
+  }
   _paintAirplaneList(root)
+}
+
+function showAircraftAddSheet(root) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Add Aircraft</div>
+      <div class="form-group">
+        <label class="form-label">Registration</label>
+        <input class="form-input mono" id="ac-reg" type="text"
+               placeholder="B-12345" autocapitalize="characters" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <input class="form-input mono" id="ac-type" type="text"
+               placeholder="A321-252NX" autocomplete="off">
+      </div>
+      <button class="btn btn-primary btn-full" id="ac-save">Add</button>
+    </div>`
+  document.body.appendChild(overlay)
+  setTimeout(() => overlay.querySelector('#ac-reg')?.focus(), 50)
+
+  overlay.querySelector('#ac-save').addEventListener('click', async () => {
+    const reg  = (overlay.querySelector('#ac-reg').value  || '').trim().toUpperCase()
+    const type = (overlay.querySelector('#ac-type').value || '').trim()
+    if (!reg)  { showToast('Registration required', 'error'); return }
+    if (!type) { showToast('Type required', 'error'); return }
+
+    const existing = (state.customAircraft || []).find(a => a.reg === reg)
+    if (existing) { showToast('Already in list', 'error'); return }
+
+    const updated = [...(state.customAircraft || []), { reg, type }]
+    setCustomAircraft(updated)
+    try {
+      await saveCustomAircraftList(state.user.uid, updated)
+      overlay.remove()
+      _paintAirplaneList(root)
+      showToast('Aircraft added', 'success')
+    } catch (e) {
+      setCustomAircraft(state.customAircraft.filter(a => a.reg !== reg))
+      showToast('Save failed', 'error')
+    }
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
 function _paintAirplaneList(root) {
