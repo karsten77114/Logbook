@@ -172,39 +172,26 @@ function detailRow(key, val, cls = '') {
 
 // ── Track / Map ────────────────────────────────
 
-/** Google Encoded Polyline → [[lat, lng], ...] */
-function decodePolyline(encoded) {
-  const pts = []
-  let idx = 0, lat = 0, lng = 0
-  while (idx < encoded.length) {
-    for (const isLat of [true, false]) {
-      let result = 0, shift = 0, b
-      do {
-        b = encoded.charCodeAt(idx++) - 63
-        result |= (b & 0x1f) << shift
-        shift += 5
-      } while (b >= 0x20)
-      const delta = (result & 1) ? ~(result >> 1) : result >> 1
-      isLat ? (lat += delta) : (lng += delta)
-      if (!isLat) pts.push([lat / 1e5, lng / 1e5])
-    }
-  }
-  return pts
-}
+const PROXY_BASE = 'https://jx-briefing.karsten77114.workers.dev'
 
-/** airportgap.com: IATA or ICAO → { icao, lat, lon } */
-async function resolveAirport(code) {
-  if (!code) return null
+/**
+ * Strategy 2: FR24 via Cloudflare Worker proxy
+ * Returns track array [{la, lo, a, t, s}] or null
+ */
+async function fetchTrackFR24(reg, date, from, to) {
+  if (!reg || !date) return null
   try {
-    const r = await fetch(
-      `https://airportgap.com/api/airports/${encodeURIComponent(code.toUpperCase())}`,
-      { signal: AbortSignal.timeout(7000) }
-    )
-    if (!r.ok) return null
-    const { data } = await r.json()
-    const a = data?.attributes
-    return a ? { icao: a.icao, lat: parseFloat(a.latitude), lon: parseFloat(a.longitude), name: a.name } : null
-  } catch { return null }
+    const qs = new URLSearchParams({ reg, date, from: from || '', to: to || '' })
+    const res = await fetch(`${PROXY_BASE}/api/track/fr24?${qs}`, {
+      signal: AbortSignal.timeout(18000),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.track?.length ? data.track : null
+  } catch (e) {
+    console.warn('[FR24] proxy failed:', e.message)
+    return null
+  }
 }
 
 async function tryFetchTrack(root, f) {
@@ -228,15 +215,23 @@ async function tryFetchTrack(root, f) {
     const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
     const tooOld = (Date.now() / 1000 - begin) > 30 * 86400
 
+    // Strategy 1: OpenSky (direct browser + Worker proxy)
     let track = null
-    if (!tooOld) track = await fetchTrack(ic, midpoint)
+    if (ic && !tooOld) track = await fetchTrack(ic, midpoint)
+
+    // Strategy 2: FR24 via Worker proxy (works when Cloudflare allows)
+    if (!track?.length && f.registration && f.date) {
+      wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
+        ⏳ 查詢 FR24 軌跡中…</div>`
+      track = await fetchTrackFR24(f.registration, f.date, f.from, f.to)
+    }
 
     if (track?.length) {
       renderMap(root, track)
       renderCharts(root, track)
     } else {
-      // ADS-B 無資料 → 改抓 FlightPlanDatabase 典型航路
-      tryFetchFlightPlan(root, f)
+      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
+        暫無 ADS-B 軌跡資料</div>`
     }
   }
 
@@ -256,54 +251,11 @@ async function tryFetchTrack(root, f) {
         if (/^[0-9a-f]{6}$/.test(lookedUp)) { doFetch(lookedUp); return }
       }
     } catch (_) {}
-    // hexdb.io 也查不到 → 直接走航路計畫
-    tryFetchFlightPlan(root, f)
+    // ICAO24 不明でも FR24 は registration で検索できる
+    doFetch(null)
   }
 }
 
-/** 當 ADS-B 無資料時，抓 FlightPlanDatabase 典型航路顯示 */
-async function tryFetchFlightPlan(root, f) {
-  const wrap = root.querySelector('#track-map-wrap')
-  if (!wrap || !f.from || !f.to) return
-
-  wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
-    ⏳ 查詢典型航路中…</div>`
-
-  try {
-    // 並行查兩個機場（IATA/ICAO 均可）
-    const [aptFrom, aptTo] = await Promise.all([
-      resolveAirport(f.from), resolveAirport(f.to)
-    ])
-
-    if (!aptFrom?.icao || !aptTo?.icao) throw new Error('airport lookup failed')
-
-    // 查 FlightPlanDatabase 典型航路
-    const fpdUrl = `https://api.flightplandatabase.com/search/plans` +
-      `?fromICAO=${aptFrom.icao}&toICAO=${aptTo.icao}&limit=1&sort=popular`
-    const fpdResp = await fetch(fpdUrl, { signal: AbortSignal.timeout(10000) })
-    const plans = fpdResp.ok ? await fpdResp.json() : []
-
-    if (plans?.length) {
-      const latlngs = decodePolyline(plans[0].encodedPolyline)
-      if (latlngs.length >= 2) {
-        renderRouteMap(root, latlngs, aptFrom, aptTo)
-        return
-      }
-    }
-
-    // FlightPlanDatabase 也沒有 → 直線連接兩機場
-    if (aptFrom.lat && aptTo.lat) {
-      renderRouteMap(root, [[aptFrom.lat, aptFrom.lon], [aptTo.lat, aptTo.lon]], aptFrom, aptTo)
-    } else {
-      wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-        暫無軌跡資料</div>`
-    }
-  } catch (e) {
-    console.warn('FlightPlanDB fallback failed:', e.message)
-    wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-      暫無軌跡資料</div>`
-  }
-}
 
 function _initMap(wrap) {
   wrap.innerHTML = `<div id="track-map" style="height:240px;border-radius:var(--radius)"></div>`
@@ -323,29 +275,6 @@ function renderMap(root, track) {
   map.fitBounds(line.getBounds(), { padding: [20, 20] })
 }
 
-/** FlightPlanDatabase 典型航路（橙色虛線 + 起降標記） */
-function renderRouteMap(root, latlngs, aptFrom, aptTo) {
-  if (!latlngs?.length || typeof L === 'undefined') return
-  const wrap = root.querySelector('#track-map-wrap')
-  if (!wrap) return
-
-  const map  = _initMap(wrap)
-  const line = L.polyline(latlngs, {
-    color: '#f0a030', weight: 2, opacity: 0.7,
-    dashArray: '6 5',
-  }).addTo(map)
-
-  // 起降機場標記
-  const dotStyle = { radius: 5, fillColor: '#f0a030', color: '#fff', weight: 1.5, fillOpacity: 1 }
-  L.circleMarker(latlngs[0], dotStyle).bindTooltip(aptFrom.name || aptFrom.icao, { permanent: false }).addTo(map)
-  L.circleMarker(latlngs[latlngs.length - 1], dotStyle).bindTooltip(aptTo.name || aptTo.icao, { permanent: false }).addTo(map)
-
-  map.fitBounds(line.getBounds(), { padding: [24, 24] })
-
-  // 標注「典型航路」
-  const card = root.querySelector('#map-card .detail-card-title')
-  if (card) card.textContent = 'Flight Track（典型航路）'
-}
 
 function renderCharts(root, track) {
   if (!track?.length || typeof Chart === 'undefined') return
