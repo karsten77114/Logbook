@@ -1,59 +1,56 @@
 // ══════════════════════════════════════════════
 // OpenSky Network API 整合
-// 免費 API，歷史軌跡保留 30 天，有 rate limit
 // ══════════════════════════════════════════════
 
-// Cloudflare Worker proxy，繞過 OpenSky CORS 限制
-const PROXY_BASE = 'https://jx-briefing.karsten77114.workers.dev'
+const OPENSKY_BASE = 'https://opensky-network.org/api'
+const PROXY_BASE   = 'https://jx-briefing.karsten77114.workers.dev'
 
-/**
- * 查詢飛行軌跡
- * @param {string} icao24   ICAO24 hex code (e.g. "899210")
- * @param {number} timeUnix Unix timestamp (秒，飛行期間任一時間點)
- * @returns {TrackPoint[] | null}
- */
 export async function fetchTrack(icao24, timeUnix) {
   if (!icao24) return null
+
+  // Strategy 1: fetch directly from browser (user's IP; OpenSky API supports CORS)
+  try {
+    const url = `${OPENSKY_BASE}/tracks/all?icao24=${icao24.toLowerCase()}&time=${timeUnix}`
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(12000),
+      headers: { Accept: 'application/json' },
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data.path?.length) return _parsePath(data.path)
+      // Got a valid response but no track points → definitive empty, don't try proxy
+      return null
+    }
+  } catch (e) {
+    // CORS failure or network error → fall through to proxy
+    console.warn('[OpenSky] direct fetch failed, trying proxy:', e.message)
+  }
+
+  // Strategy 2: Cloudflare Worker proxy (fallback)
   try {
     const url = `${PROXY_BASE}/api/track?icao24=${icao24.toLowerCase()}&time=${timeUnix}`
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
     if (!res.ok) return null
     const data = await res.json()
-    if (!data.path || data.path.length === 0) return null
-
-    // path: [[time, lat, lon, baro_alt, true_track, on_ground], ...]
-    return data.path
-      .filter(p => p[1] != null && p[2] != null)
-      .map(p => ({
-        t:  p[0],
-        la: parseFloat((p[1] || 0).toFixed(4)),
-        lo: parseFloat((p[2] || 0).toFixed(4)),
-        a:  Math.round((p[3] || 0) * 3.28084), // meters → feet
-        s:  0, // groundspeed not available in track endpoint
-      }))
+    if (!data.path?.length) return null
+    return _parsePath(data.path)
   } catch (e) {
-    console.warn('OpenSky track fetch failed:', e)
+    console.warn('[OpenSky] proxy fetch failed:', e)
     return null
   }
 }
 
-/**
- * 查詢航班記錄（by aircraft）
- * @param {string} icao24
- * @param {number} beginUnix
- * @param {number} endUnix
- */
-export async function fetchFlights(icao24, beginUnix, endUnix) {
-  if (!icao24) return null
-  try {
-    const url = `${BASE}/flights/aircraft?icao24=${icao24.toLowerCase()}&begin=${beginUnix}&end=${endUnix}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-    if (!res.ok) return null
-    return await res.json()
-  } catch (e) {
-    console.warn('OpenSky flights fetch failed:', e)
-    return null
-  }
+function _parsePath(path) {
+  // path: [[time, lat, lon, baro_alt_m, true_track, on_ground], ...]
+  return path
+    .filter(p => p[1] != null && p[2] != null)
+    .map(p => ({
+      t:  p[0],
+      la: parseFloat((p[1] || 0).toFixed(4)),
+      lo: parseFloat((p[2] || 0).toFixed(4)),
+      a:  Math.round((p[3] || 0) * 3.28084), // metres → feet
+      s:  0,
+    }))
 }
 
 /**
@@ -72,8 +69,8 @@ export function getTimeRange(date, offTime, onTime) {
   if (onMs <= offMs) onMs += 86400000
 
   return {
-    begin: Math.floor(offMs / 1000) - 300,   // -5min buffer
-    end:   Math.floor(onMs  / 1000) + 300,    // +5min buffer
+    begin:    Math.floor(offMs / 1000) - 300,
+    end:      Math.floor(onMs  / 1000) + 300,
     midpoint: Math.floor((offMs + onMs) / 2 / 1000),
   }
 }
