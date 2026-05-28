@@ -178,10 +178,10 @@ const PROXY_BASE = 'https://jx-briefing.karsten77114.workers.dev'
  * Strategy 2: FR24 via Cloudflare Worker proxy
  * Returns track array [{la, lo, a, t, s}] or null
  */
-async function fetchTrackFR24(reg, date, from, to) {
+async function fetchTrackFR24(reg, date, from, to, fn) {
   if (!reg || !date) return null
   try {
-    const qs = new URLSearchParams({ reg, date, from: from || '', to: to || '' })
+    const qs = new URLSearchParams({ reg, date, from: from || '', to: to || '', fn: fn || '' })
     const res = await fetch(`${PROXY_BASE}/api/track/fr24?${qs}`, {
       signal: AbortSignal.timeout(18000),
     })
@@ -223,7 +223,7 @@ async function tryFetchTrack(root, f) {
     if (!track?.length && f.registration && f.date) {
       wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
         ⏳ 查詢 FR24 軌跡中…</div>`
-      track = await fetchTrackFR24(f.registration, f.date, f.from, f.to)
+      track = await fetchTrackFR24(f.registration, f.date, f.from, f.to, f.flightNumber)
     }
 
     if (track?.length) {
