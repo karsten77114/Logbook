@@ -277,8 +277,9 @@ function _bearing(p1, p2) {
 }
 
 function _planeIcon(hdg) {
+  // ✈ emoji faces east (90°) by default; subtract 90° to align with north-based bearing
   return L.divIcon({
-    html: `<div style="transform:rotate(${Math.round(hdg)}deg);font-size:20px;line-height:1;
+    html: `<div style="transform:rotate(${Math.round(hdg - 90)}deg);font-size:20px;line-height:1;
                        text-shadow:0 0 6px #000,0 0 12px #000;color:#fff">✈</div>`,
     className: 'plane-marker-icon',
     iconSize: [22, 22],
@@ -462,7 +463,7 @@ function initTimeline(root, track, mapObjs, chartObjs) {
     const markerEl = marker.getElement()
     if (markerEl) {
       const div = markerEl.querySelector('div')
-      if (div) div.style.transform = `rotate(${Math.round(hdg)}deg)`
+      if (div) div.style.transform = `rotate(${Math.round(hdg - 90)}deg)`
     }
     flownLine.setLatLngs(track.slice(0, idx + 1).map(p => [p.la, p.lo]))
 
