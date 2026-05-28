@@ -187,6 +187,11 @@ function renderAll(root, s, flights) {
     row.addEventListener('click', () => navigate('detail/' + row.dataset.id))
   })
 
+  // View All / nav buttons inside scroll content
+  scroll.querySelectorAll('[data-nav]').forEach(btn => {
+    btn.addEventListener('click', () => navigate(btn.dataset.nav))
+  })
+
   // Airline logo tap → picker
   const logoBtnEl = scroll.querySelector('#dash-logo-btn')
   if (logoBtnEl) {

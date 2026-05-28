@@ -5,6 +5,7 @@ import { getAllFlights, saveCrew, deleteCrew } from '../db.js'
 import { state, setCrew, isCrewActive }        from '../state.js'
 import { navigate, showToast }                 from '../app.js'
 import { fmtDuration }                         from '../utils/time.js'
+import { showCountryPicker, getCountryName }   from '../data/countries.js'
 
 export async function renderCrewDetail(root, params) {
   const crewId = params[0]
@@ -209,7 +210,20 @@ const _MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov',
 
 // ── Edit sheet ─────────────────────────────────
 
+function _flagEmoji(code) {
+  if (!code || code.length !== 2) return ''
+  const u = code.toUpperCase()
+  return [...u].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+}
+
+function _natDisplayText(code) {
+  if (!code) return 'Tap to select…'
+  const name = getCountryName(code)
+  return `${_flagEmoji(code)}  ${name || code}`
+}
+
 function _showEditSheet(root, person) {
+  let _natCode = person.nationality || ''
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
@@ -231,7 +245,7 @@ function _showEditSheet(root, person) {
       <div class="form-group">
         <label class="form-label">Position</label>
         <select class="form-select" id="cr-position">
-          <option value="" ${!person.position ? 'selected' : ''}>— Not set —</option>
+          <option value="" ${!person.position ? 'selected' : ''}>— Select —</option>
           ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}" ${p === person.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
@@ -242,19 +256,22 @@ function _showEditSheet(root, person) {
         <div class="form-group">
           <label class="form-label">Employee ID</label>
           <input class="form-input mono" id="cr-empid" type="text"
-                 value="${person.employeeId || ''}" placeholder="59989">
+                 value="${person.employeeId || ''}">
         </div>
         <div class="form-group">
           <label class="form-label">Licence No.</label>
           <input class="form-input mono" id="cr-licence" type="text"
-                 value="${person.licenceNumber || ''}" placeholder="103077">
+                 value="${person.licenceNumber || ''}">
         </div>
       </div>
 
       <div class="form-group">
         <label class="form-label">Nationality</label>
-        <input class="form-input" id="cr-national" type="text"
-               value="${person.nationality || ''}" placeholder="Taiwan">
+        <button class="form-picker-btn" id="cr-national-btn" type="button">
+          <span id="cr-national-display" style="${person.nationality ? '' : 'color:var(--text-faint)'}">
+            ${_natDisplayText(person.nationality)}
+          </span>
+        </button>
       </div>
 
       <div class="form-group">
@@ -271,6 +288,18 @@ function _showEditSheet(root, person) {
       <button class="btn btn-danger btn-full" id="crew-del">Delete Crew Member</button>
     </div>`
   document.body.appendChild(overlay)
+
+  // Nationality picker
+  overlay.querySelector('#cr-national-btn').addEventListener('click', () => {
+    showCountryPicker(_natCode, (code, name) => {
+      _natCode = code
+      const display = overlay.querySelector('#cr-national-display')
+      if (display) {
+        display.textContent = `${_flagEmoji(code)}  ${name}`
+        display.style.color = 'var(--text)'
+      }
+    })
+  })
 
   // Active toggle
   const toggleRow    = overlay.querySelector('#cr-active-toggle')
@@ -290,7 +319,7 @@ function _showEditSheet(root, person) {
       position:      overlay.querySelector('#cr-position').value,
       employeeId:    overlay.querySelector('#cr-empid').value.trim(),
       licenceNumber: overlay.querySelector('#cr-licence').value.trim(),
-      nationality:   overlay.querySelector('#cr-national').value.trim(),
+      nationality:   _natCode,
       active:        toggleRow?.dataset.active !== 'false',
     }
     if (!data.firstName && !data.lastName) { showToast('Name is required', 'error'); return }
@@ -300,7 +329,6 @@ function _showEditSheet(root, person) {
       if (idx >= 0) state.crew[idx] = { id: person.id, ...data }
       overlay.remove()
       showToast('Updated', 'success')
-      // Re-render with updated person
       navigate('crew-detail/' + person.id)
     } catch (e) {
       showToast('Save failed', 'error')

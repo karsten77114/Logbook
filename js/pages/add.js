@@ -15,6 +15,8 @@ import { ALL_AIRPORT_CODES,
          lookupAirport }           from '../data/airports.js'
 import { isAircraftActive,
          isCrewActive }            from '../state.js'
+import { showCountryPicker,
+         getCountryName }          from '../data/countries.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
@@ -819,6 +821,8 @@ function showAircraftQuickAdd(root, form) {
 // ── Crew Quick-Add ─────────────────────────────
 
 function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
+  let _natCode = ''
+
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.style.zIndex = '10001'
@@ -829,17 +833,17 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">First Name</label>
-          <input class="form-input" id="qc-first" type="text" placeholder="Po-Kang">
+          <input class="form-input" id="qc-first" type="text">
         </div>
         <div class="form-group">
           <label class="form-label">Last Name</label>
-          <input class="form-input" id="qc-last" type="text" placeholder="Chang">
+          <input class="form-input" id="qc-last" type="text">
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">Position</label>
         <select class="form-select" id="qc-pos">
-          <option value="">— Not set —</option>
+          <option value="">— Select —</option>
           ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}">${p}</option>`
           ).join('')}
@@ -848,24 +852,35 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Employee ID</label>
-          <input class="form-input mono" id="qc-empid" type="text" placeholder="12345">
+          <input class="form-input mono" id="qc-empid" type="text">
         </div>
         <div class="form-group">
           <label class="form-label">Licence No.</label>
-          <input class="form-input mono" id="qc-lic" type="text" placeholder="ATPL-001">
+          <input class="form-input mono" id="qc-lic" type="text">
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Nationality (ISO code)</label>
-        <input class="form-input mono" id="qc-nat" type="text"
-               placeholder="TW / US / JP…" maxlength="2"
-               autocapitalize="characters" autocomplete="off"
-               style="width:90px;text-transform:uppercase">
+        <label class="form-label">Nationality</label>
+        <button class="form-picker-btn" id="qc-nat-btn" type="button">
+          <span id="qc-nat-display" style="color:var(--text-faint)">Tap to select…</span>
+        </button>
       </div>
       <button class="btn btn-primary btn-full" id="qc-save">Add</button>
     </div>`
   document.body.appendChild(overlay)
   setTimeout(() => overlay.querySelector('#qc-first')?.focus(), 50)
+
+  overlay.querySelector('#qc-nat-btn').addEventListener('click', () => {
+    showCountryPicker(_natCode, (code, name) => {
+      _natCode = code
+      const flagCp = [...code].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+      const display = overlay.querySelector('#qc-nat-display')
+      if (display) {
+        display.textContent = `${flagCp}  ${name}`
+        display.style.color = 'var(--text)'
+      }
+    })
+  })
 
   overlay.querySelector('#qc-save').addEventListener('click', async () => {
     const first = (overlay.querySelector('#qc-first').value || '').trim()
@@ -873,15 +888,14 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
     const pos   = overlay.querySelector('#qc-pos').value
     const empId = (overlay.querySelector('#qc-empid').value || '').trim()
     const lic   = (overlay.querySelector('#qc-lic').value   || '').trim()
-    const nat   = (overlay.querySelector('#qc-nat').value   || '').trim().toUpperCase()
     if (!first && !last) { showToast('Name is required', 'error'); return }
 
     const id   = `crew_${Date.now()}`
     const data = {
       firstName: first, lastName: last, position: pos, active: true,
-      ...(empId && { employeeId: empId }),
-      ...(lic   && { licenceNumber: lic }),
-      ...(nat   && { nationality: nat }),
+      ...(empId    && { employeeId: empId }),
+      ...(lic      && { licenceNumber: lic }),
+      ...(_natCode && { nationality: _natCode }),
     }
     try {
       await saveCrew(state.user.uid, id, data)
