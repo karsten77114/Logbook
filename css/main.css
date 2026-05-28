@@ -38,6 +38,7 @@
 
 html, body {
   height: 100%;
+  min-height: -webkit-fill-available;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -238,7 +239,6 @@ html, body {
   background: var(--border);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  padding-top: var(--safe-top); /* list 頁沒有 topbar，需直接補 safe area */
 }
 
 .stat-cell {
@@ -2299,13 +2299,3 @@ html, body {
   color: var(--text);
 }
 
-/* ── Safe area bottom fill ───────────────────── */
-body::after {
-  content: '';
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: env(safe-area-inset-bottom, 0px);
-  background: var(--surface);
-  z-index: 9;
-  pointer-events: none;
-}

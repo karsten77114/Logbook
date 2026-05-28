@@ -669,15 +669,11 @@ function _paintAirplaneList(root) {
     row.addEventListener('click', () => navigate('airplane-detail/' + row.dataset.reg))
   })
 
-  // Custom rows → delete confirm
+  // Custom rows → edit sheet
   scroll.querySelectorAll('[data-custom]').forEach(row => {
-    row.addEventListener('click', async () => {
-      if (!confirm(`Remove ${row.dataset.reg} from your list?`)) return
-      const updated = (state.customAircraft || []).filter(a => a.reg !== row.dataset.reg)
-      setCustomAircraft(updated)
-      await saveCustomAircraftList(state.user.uid, updated)
-      _paintAirplaneList(root)
-      showToast('Removed', 'success')
+    row.addEventListener('click', () => {
+      const entry = (state.customAircraft || []).find(a => a.reg === row.dataset.reg)
+      if (entry) showCustomAircraftEditSheet(root, entry)
     })
   })
 }
@@ -690,8 +686,61 @@ function customAirplaneRowHtml(a) {
         <div class="hub-row-name mono">${a.reg}</div>
         <div class="hub-row-sub">${a.type}</div>
       </div>
-      <span style="color:var(--text-faint);font-size:13px;margin-left:auto">Tap to remove</span>
+      <span style="color:var(--text-faint);font-size:18px;margin-left:4px">›</span>
     </div>`
+}
+
+function showCustomAircraftEditSheet(root, entry) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-title">Edit Aircraft</div>
+      <div class="form-group">
+        <label class="form-label">Registration</label>
+        <input class="form-input mono" id="ace-reg" type="text"
+               value="${entry.reg}" autocapitalize="characters" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <input class="form-input mono" id="ace-type" type="text"
+               value="${entry.type}" autocomplete="off">
+      </div>
+      <button class="btn btn-primary btn-full" id="ace-save">Save</button>
+      <button class="btn btn-danger btn-full" id="ace-del">Remove Aircraft</button>
+    </div>`
+  document.body.appendChild(overlay)
+
+  overlay.querySelector('#ace-save').addEventListener('click', async () => {
+    const reg  = (overlay.querySelector('#ace-reg').value  || '').trim().toUpperCase()
+    const type = (overlay.querySelector('#ace-type').value || '').trim()
+    if (!reg || !type) { showToast('Registration and type required', 'error'); return }
+    const updated = (state.customAircraft || []).map(a =>
+      a.reg === entry.reg ? { reg, type } : a
+    )
+    setCustomAircraft(updated)
+    try {
+      await saveCustomAircraftList(state.user.uid, updated)
+      overlay.remove()
+      _paintAirplaneList(root)
+      showToast('Updated', 'success')
+    } catch (e) {
+      showToast('Save failed', 'error')
+    }
+  })
+
+  overlay.querySelector('#ace-del').addEventListener('click', async () => {
+    if (!confirm(`Remove ${entry.reg}?`)) return
+    const updated = (state.customAircraft || []).filter(a => a.reg !== entry.reg)
+    setCustomAircraft(updated)
+    await saveCustomAircraftList(state.user.uid, updated)
+    overlay.remove()
+    _paintAirplaneList(root)
+    showToast('Removed', 'success')
+  })
+
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
 
 function airplaneRowHtml(p) {
