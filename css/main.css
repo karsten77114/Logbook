@@ -1128,6 +1128,69 @@ html, body {
   margin: 0;
 }
 
+/* Leaflet plane marker — no default box */
+.plane-marker-icon { background: none !important; border: none !important; }
+
+/* ── Track Timeline ──────────────────────────── */
+.track-tl {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.tl-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  gap: 8px;
+}
+.tl-info #tl-time { color: var(--accent); }
+.tl-info #tl-alt  { color: var(--text-dim); }
+.tl-info #tl-spd  { color: var(--amber); }
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tl-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.tl-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-med);
+  outline: none;
+  cursor: pointer;
+  min-width: 0;
+}
+.tl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 0 3px rgba(0,180,216,0.25);
+}
+.tl-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 3px rgba(0,180,216,0.25);
+}
+
 /* ── Settings ────────────────────────────────── */
 .settings-section {
   margin: 0;

@@ -50,8 +50,7 @@ export async function renderDetail(root, params) {
     if (!f.flightTrack && f.offTime && f.onTime) {
       tryFetchTrack(root, f)
     } else if (f.flightTrack?.length > 0) {
-      renderMap(root, f.flightTrack)
-      renderCharts(root, f.flightTrack)
+      renderTrack(root, f.flightTrack)
     }
 
   } catch (e) {
@@ -146,6 +145,19 @@ function buildDetailHtml(f) {
             正在查詢軌跡資料…
           </div>
         </div>
+        <!-- Timeline scrubber (hidden until track loads) -->
+        <div id="track-timeline" class="track-tl hidden">
+          <div class="tl-info">
+            <span id="tl-time">--:--Z</span>
+            <span id="tl-alt">-- ft</span>
+            <span id="tl-spd">-- kts</span>
+          </div>
+          <div class="tl-row">
+            <span id="tl-dep" class="tl-label">--:--</span>
+            <input type="range" id="tl-slider" class="tl-slider" min="0" max="1000" value="0">
+            <span id="tl-arr" class="tl-label">--:--</span>
+          </div>
+        </div>
       </div>
 
       <!-- Charts placeholder -->
@@ -227,8 +239,7 @@ async function tryFetchTrack(root, f) {
     }
 
     if (track?.length) {
-      renderMap(root, track)
-      renderCharts(root, track)
+      renderTrack(root, track)
     } else {
       wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
         暫無 ADS-B 軌跡資料</div>`
@@ -257,6 +268,28 @@ async function tryFetchTrack(root, f) {
 }
 
 
+// ── Helpers ────────────────────────────────────
+
+function _bearing(p1, p2) {
+  const toR = d => d * Math.PI / 180
+  const y = Math.sin(toR(p2.lo - p1.lo)) * Math.cos(toR(p2.la))
+  const x = Math.cos(toR(p1.la)) * Math.sin(toR(p2.la)) -
+            Math.sin(toR(p1.la)) * Math.cos(toR(p2.la)) * Math.cos(toR(p2.lo - p1.lo))
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+}
+
+function _planeIcon(hdg) {
+  return L.divIcon({
+    html: `<div style="transform:rotate(${Math.round(hdg)}deg);font-size:20px;line-height:1;
+                       text-shadow:0 0 6px #000,0 0 12px #000;color:#fff">✈</div>`,
+    className: 'plane-marker-icon',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  })
+}
+
+// ── Map ────────────────────────────────────────
+
 function _initMap(wrap) {
   wrap.innerHTML = `<div id="track-map" style="height:240px;border-radius:var(--radius)"></div>`
   const map = L.map('track-map', { zoomControl: false, attributionControl: false })
@@ -264,55 +297,158 @@ function _initMap(wrap) {
   return map
 }
 
-/** ADS-B 實際軌跡（藍色實線） */
+/** Render ADS-B track; returns {map, marker, flownLine} for timeline use */
 function renderMap(root, track) {
-  if (!track?.length || typeof L === 'undefined') return
+  if (!track?.length || typeof L === 'undefined') return null
   const wrap = root.querySelector('#track-map-wrap')
-  if (!wrap) return
+  if (!wrap) return null
+
   const map     = _initMap(wrap)
   const latlngs = track.map(p => [p.la, p.lo])
-  const line    = L.polyline(latlngs, { color: '#00b4d8', weight: 2, opacity: 0.8 }).addTo(map)
-  map.fitBounds(line.getBounds(), { padding: [20, 20] })
+
+  // Dim full-route line
+  L.polyline(latlngs, { color: '#00b4d8', weight: 2, opacity: 0.25 }).addTo(map)
+  // Bright "flown" line (filled by timeline scrubber)
+  const flownLine = L.polyline([], { color: '#00d4f8', weight: 3, opacity: 0.9 }).addTo(map)
+
+  map.fitBounds(L.latLngBounds(latlngs), { padding: [20, 20] })
+
+  const hdg0  = track.length > 1 ? _bearing(track[0], track[1]) : 0
+  const marker = L.marker([track[0].la, track[0].lo], { icon: _planeIcon(hdg0) }).addTo(map)
+
+  return { map, marker, flownLine }
 }
 
+// ── Charts ─────────────────────────────────────
 
+/** Cursor plugin drawn on each chart (per-chart, not global) */
+const _cursorPlugin = {
+  id: 'trackCursor',
+  afterDraw(chart) {
+    const idx = chart._cursorIdx
+    if (idx == null) return
+    const meta = chart.getDatasetMeta(0)
+    if (!meta?.data?.[idx]) return
+    const x = meta.data[idx].x
+    const { ctx, chartArea } = chart
+    if (!chartArea) return
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(x, chartArea.top)
+    ctx.lineTo(x, chartArea.bottom)
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([4, 3])
+    ctx.stroke()
+    const y = meta.data[idx].y
+    ctx.beginPath()
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2)
+    ctx.fillStyle = '#fff'
+    ctx.fill()
+    ctx.restore()
+  },
+}
+
+/** Render altitude & speed charts; returns {altChart, spdChart, sample} */
 function renderCharts(root, track) {
-  if (!track?.length || typeof Chart === 'undefined') return
+  if (!track?.length || typeof Chart === 'undefined') return null
 
   const card = root.querySelector('#charts-card')
   if (card) card.classList.remove('hidden')
 
-  // Sample every 5 points for performance
-  const sample   = track.filter((_, i) => i % 5 === 0)
-  const labels   = sample.map(p => {
+  const sample  = track.filter((_, i) => i % 5 === 0)
+  const labels  = sample.map(p => {
     const d = new Date(p.t * 1000)
     return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
   })
-  const altData  = sample.map(p => p.a)
-  const spdData  = sample.map(p => p.s)
+  const altData = sample.map(p => p.a)
+  const spdData = sample.map(p => p.s)
 
-  const chartOpts = (color) => ({
-    type: 'line',
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      elements: { point: { radius: 0 }, line: { tension: 0.3 } },
-      scales: {
-        x: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
-        y: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
-      },
-    },
-    data: {
-      labels,
-      datasets: [{ data: altData, borderColor: color, borderWidth: 1.5, fill: false }],
+  const mkOpts = () => ({
+    responsive: true,
+    animation: false,
+    plugins: { legend: { display: false } },
+    elements: { point: { radius: 0 }, line: { tension: 0.3 } },
+    scales: {
+      x: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
+      y: { ticks: { color: '#6888a0', font: { size: 10 } }, grid: { color: '#1e2d3d' } },
     },
   })
 
   const altCtx = root.querySelector('#chart-altitude')?.getContext('2d')
-  if (altCtx) new Chart(altCtx, { ...chartOpts('#00b4d8'), data: { labels, datasets: [{ data: altData, borderColor: '#00b4d8', borderWidth:1.5, fill:false }] } })
+  const altChart = altCtx ? new Chart(altCtx, {
+    type: 'line', plugins: [_cursorPlugin], options: mkOpts(),
+    data: { labels, datasets: [{ data: altData, borderColor: '#00b4d8', borderWidth: 1.5, fill: false }] },
+  }) : null
 
   const spdCtx = root.querySelector('#chart-speed')?.getContext('2d')
-  if (spdCtx) new Chart(spdCtx, { ...chartOpts('#f0a030'), data: { labels, datasets: [{ data: spdData, borderColor: '#f0a030', borderWidth:1.5, fill:false }] } })
+  const spdChart = spdCtx ? new Chart(spdCtx, {
+    type: 'line', plugins: [_cursorPlugin], options: mkOpts(),
+    data: { labels, datasets: [{ data: spdData, borderColor: '#f0a030', borderWidth: 1.5, fill: false }] },
+  }) : null
+
+  return { altChart, spdChart, sample }
+}
+
+// ── Timeline ───────────────────────────────────
+
+function initTimeline(root, track, mapObjs, chartObjs) {
+  const tl = root.querySelector('#track-timeline')
+  if (!tl) return
+  tl.classList.remove('hidden')
+
+  const slider = root.querySelector('#tl-slider')
+  const tlTime = root.querySelector('#tl-time')
+  const tlAlt  = root.querySelector('#tl-alt')
+  const tlSpd  = root.querySelector('#tl-spd')
+  const tlDep  = root.querySelector('#tl-dep')
+  const tlArr  = root.querySelector('#tl-arr')
+
+  slider.min = 0
+  slider.max = track.length - 1
+  slider.value = 0
+
+  const fmtUTC = ts => {
+    const d = new Date(ts * 1000)
+    return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}Z`
+  }
+  tlDep.textContent = fmtUTC(track[0].t)
+  tlArr.textContent = fmtUTC(track[track.length - 1].t)
+
+  const { marker, flownLine } = mapObjs
+  const { altChart, spdChart, sample } = chartObjs || {}
+  const sampleLen = sample?.length || 1
+
+  function update(rawIdx) {
+    const idx = Math.max(0, Math.min(rawIdx, track.length - 1))
+    const pt  = track[idx]
+
+    // Map: move plane marker + fill flown line
+    const hdg = idx > 0 ? _bearing(track[idx - 1], pt) : _bearing(track[0], track[1] || track[0])
+    marker.setLatLng([pt.la, pt.lo])
+    marker.setIcon(_planeIcon(hdg))
+    flownLine.setLatLngs(track.slice(0, idx + 1).map(p => [p.la, p.lo]))
+
+    // Info bar
+    tlTime.textContent = fmtUTC(pt.t)
+    tlAlt.textContent  = pt.a > 0 ? `${pt.a.toLocaleString()} ft` : 'GND'
+    tlSpd.textContent  = `${pt.s} kts`
+
+    // Chart cursors
+    const si = Math.min(Math.floor(idx / 5), sampleLen - 1)
+    if (altChart) { altChart._cursorIdx = si; altChart.draw() }
+    if (spdChart) { spdChart._cursorIdx = si; spdChart.draw() }
+  }
+
+  slider.addEventListener('input', () => update(parseInt(slider.value)))
+  update(0)
+}
+
+/** Render full track: map + charts + timeline scrubber */
+function renderTrack(root, track) {
+  const mapObjs   = renderMap(root, track)
+  const chartObjs = renderCharts(root, track)
+  if (mapObjs) initTimeline(root, track, mapObjs, chartObjs)
 }
 
 // ── Delete Confirm ─────────────────────────────
