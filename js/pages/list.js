@@ -4,9 +4,10 @@
 import { getFlights, getAllFlights,
          getCareer, saveCareer,
          getCrew, saveCrew, deleteCrew,
-         getAircraftSettings, saveAircraftSettings } from '../db.js'
+         getAircraftSettings, saveAircraftSettings,
+         saveCustomAircraftList }                   from '../db.js'
 import { state, setCareer, setCrew,
-         setAircraftSettings,
+         setAircraftSettings, setCustomAircraft,
          isAircraftActive, isCrewActive }            from '../state.js'
 import { fmtDate, fmtDuration }                      from '../utils/time.js'
 import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
@@ -585,7 +586,7 @@ function _paintAirplaneList(root) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
 
-  // Group by type
+  // Group fleet aircraft by type
   const byType = {}
   for (const reg of ALL_REGISTRATIONS) {
     const info = FLEET[reg]
@@ -595,19 +596,50 @@ function _paintAirplaneList(root) {
     byType[type].push({ reg, ...info })
   }
 
+  const customAC = state.customAircraft || []
+  const customSection = customAC.length
+    ? `<div class="hub-section-label">Custom</div>
+       <div class="hub-list">
+         ${customAC.map(a => customAirplaneRowHtml(a)).join('')}
+       </div>`
+    : ''
+
   scroll.innerHTML = Object.entries(byType).map(([type, planes]) => `
     <div class="hub-section-label">${type}</div>
     <div class="hub-list">
       ${planes.map(p => airplaneRowHtml(p)).join('')}
     </div>
-  `).join('')
+  `).join('') + customSection
 
-  // Tap → navigate to detail page
+  // Fleet rows → detail page
   scroll.querySelectorAll('[data-reg]').forEach(row => {
-    row.addEventListener('click', () => {
-      navigate('airplane-detail/' + row.dataset.reg)
+    if (row.dataset.custom) return
+    row.addEventListener('click', () => navigate('airplane-detail/' + row.dataset.reg))
+  })
+
+  // Custom rows → delete confirm
+  scroll.querySelectorAll('[data-custom]').forEach(row => {
+    row.addEventListener('click', async () => {
+      if (!confirm(`Remove ${row.dataset.reg} from your list?`)) return
+      const updated = (state.customAircraft || []).filter(a => a.reg !== row.dataset.reg)
+      setCustomAircraft(updated)
+      await saveCustomAircraftList(state.user.uid, updated)
+      _paintAirplaneList(root)
+      showToast('Removed', 'success')
     })
   })
+}
+
+function customAirplaneRowHtml(a) {
+  return `
+    <div class="hub-row" data-reg="${a.reg}" data-custom="1">
+      <div class="hub-row-avatar hub-plane-avatar">✈</div>
+      <div class="hub-row-info">
+        <div class="hub-row-name mono">${a.reg}</div>
+        <div class="hub-row-sub">${a.type}</div>
+      </div>
+      <span style="color:var(--text-faint);font-size:13px;margin-left:auto">Tap to remove</span>
+    </div>`
 }
 
 function airplaneRowHtml(p) {

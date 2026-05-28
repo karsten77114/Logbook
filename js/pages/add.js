@@ -1,8 +1,9 @@
 // ══════════════════════════════════════════════
 // Add Flight — 5-Step Wizard (Prototype Design)
 // ══════════════════════════════════════════════
-import { addFlight, saveCrew }      from '../db.js'
-import { state }                   from '../state.js'
+import { addFlight, saveCrew,
+         saveCustomAircraftList }  from '../db.js'
+import { state, setCustomAircraft } from '../state.js'
 import { navigate, showToast }     from '../app.js'
 import { invalidateStats }         from './list.js'
 import { diffMin, normalizeHm,
@@ -22,15 +23,17 @@ const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 const TOTAL       = 5
 
-// ── Custom Aircraft (localStorage store) ──────
-const _LS_AC = 'logbook_custom_aircraft_v1'
+// ── Custom Aircraft helpers ────────────────────
 function getCustomAircraft() {
-  try { return JSON.parse(localStorage.getItem(_LS_AC) || '[]') } catch { return [] }
+  return state.customAircraft || []
 }
-function addCustomAircraftEntry(reg, type) {
+async function addCustomAircraftEntry(reg, type) {
   const list = getCustomAircraft()
-  if (!list.find(a => a.reg === reg)) list.push({ reg, type })
-  localStorage.setItem(_LS_AC, JSON.stringify(list))
+  if (!list.find(a => a.reg === reg)) {
+    const updated = [...list, { reg, type }]
+    setCustomAircraft(updated)
+    await saveCustomAircraftList(state.user.uid, updated)
+  }
 }
 
 // ── URL params prefill (Kneeboard integration) ─
@@ -787,12 +790,12 @@ function showAircraftQuickAdd(root, form) {
   document.body.appendChild(overlay)
   setTimeout(() => overlay.querySelector('#qac-reg')?.focus(), 50)
 
-  overlay.querySelector('#qac-save').addEventListener('click', () => {
+  overlay.querySelector('#qac-save').addEventListener('click', async () => {
     const reg  = (overlay.querySelector('#qac-reg').value  || '').trim().toUpperCase()
     const type = (overlay.querySelector('#qac-type').value || '').trim()
     if (!reg || !type) { showToast('Registration and type required', 'error'); return }
 
-    addCustomAircraftEntry(reg, type)
+    await addCustomAircraftEntry(reg, type)
 
     // Append to Registration select and select it
     const sel = root.querySelector('#f-reg')

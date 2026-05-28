@@ -202,7 +202,7 @@ export async function deleteCrew(uid, crewId) {
 }
 
 // ── Aircraft Settings ─────────────────────────
-// 儲存使用者自訂的飛機 active/inactive 狀態
+// 儲存使用者自訂的飛機 active/inactive 狀態 + 自訂機號清單
 
 export async function getAircraftSettings(uid) {
   const snap = await getDoc(doc(db(), 'users', uid, 'meta', 'aircraft'))
@@ -210,5 +210,14 @@ export async function getAircraftSettings(uid) {
 }
 
 export async function saveAircraftSettings(uid, settings) {
-  await setDoc(doc(db(), 'users', uid, 'meta', 'aircraft'), { settings })
+  await setDoc(doc(db(), 'users', uid, 'meta', 'aircraft'), { settings }, { merge: true })
+}
+
+export async function getCustomAircraftList(uid) {
+  const snap = await getDoc(doc(db(), 'users', uid, 'meta', 'aircraft'))
+  return snap.exists() ? (snap.data().custom || []) : []
+}
+
+export async function saveCustomAircraftList(uid, list) {
+  await setDoc(doc(db(), 'users', uid, 'meta', 'aircraft'), { custom: list }, { merge: true })
 }
