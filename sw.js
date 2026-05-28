@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v24'
+const CACHE = 'logbook-v25'
 const PRECACHE = [
   './',
   './index.html',
