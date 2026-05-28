@@ -7,7 +7,6 @@ export const FLEET = {
   'B-16851': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
   'B-16852': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
   'B-16853': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
-  'B-16854': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
   'B-16855': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
   'B-16856': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
   'B-16857': { type: 'ATR72-600', airline: 'Mandarin Airlines', icao24: null },
