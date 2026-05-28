@@ -187,14 +187,15 @@ function renderSection(root) {
   const fab      = root.querySelector('#fab-add')
   const topAdd   = root.querySelector('#hub-top-add')
 
-  const isFlights = _section === 'flights'
+  const isFlights   = _section === 'flights'
+  const hasTopAdd   = _section === 'crew' || _section === 'experience'
   if (statsEl)  statsEl.style.display  = isFlights ? '' : 'none'
   if (searchEl) searchEl.style.display = isFlights ? '' : 'none'
   if (fab)      fab.style.display      = isFlights ? '' : 'none'
   if (topAdd) {
-    const showBtn = !isFlights
-    topAdd.style.visibility   = showBtn ? 'visible' : 'hidden'
-    topAdd.style.pointerEvents = showBtn ? '' : 'none'
+    topAdd.style.visibility    = hasTopAdd ? 'visible' : 'hidden'
+    topAdd.style.pointerEvents = hasTopAdd ? '' : 'none'
+    if (!hasTopAdd) topAdd.onclick = null
   }
 
   // Route to section renderer
@@ -745,7 +746,6 @@ async function renderExperienceSection(root) {
   } catch (e) { console.warn('[Exp] getAllFlights failed', e) }
 
   if (topAdd) {
-    topAdd.style.display = ''
     topAdd.onclick = () => showExpEditSheet(root, null, allFlights, async data => {
       const newCareer = [...(state.career || []), data]
       await saveCareer(uid, newCareer)
