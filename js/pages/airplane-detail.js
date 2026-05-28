@@ -19,7 +19,7 @@ export async function renderAirplaneDetail(root, params) {
       <div class="topbar">
         <button class="topbar-action btn-back" id="btn-back">‹</button>
         <div class="topbar-title mono" style="letter-spacing:0.05em">${reg}</div>
-        <div style="width:44px"></div>
+        <button class="topbar-action btn-edit" id="btn-edit">Edit</button>
       </div>
       <div class="scroll" id="ad-scroll">
         <div class="list-loading"><div class="loader"></div></div>
@@ -27,6 +27,7 @@ export async function renderAirplaneDetail(root, params) {
     </div>`
 
   root.querySelector('#btn-back').addEventListener('click', () => navigate('list'))
+  root.querySelector('#btn-edit').addEventListener('click', () => _showEditSheet(root, reg, info))
 
   try {
     const allFlights = await getAllFlights(state.user.uid)
@@ -101,6 +102,9 @@ function _paintDetail(root, reg, info, stats, flights) {
           ${active ? 'Active' : 'Inactive'}
         </span>`
       )}
+      ${(state.aircraftSettings?.[reg]?.notes)
+        ? _infoRow('📝', 'Notes', `<span style="white-space:pre-wrap">${state.aircraftSettings[reg].notes}</span>`)
+        : ''}
     </div>
 
     <!-- Active toggle -->
@@ -200,3 +204,76 @@ function _flightRowHtml(f) {
 }
 
 const _MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function _showEditSheet(root, reg, info) {
+  const existing = document.querySelector('.modal-overlay')
+  if (existing) existing.remove()
+
+  const notes = state.aircraftSettings?.[reg]?.notes || ''
+
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.innerHTML = `
+    <div class="modal-sheet">
+      <div class="modal-topbar">
+        <button class="topbar-action" id="ae-cancel">Cancel</button>
+        <div class="modal-title">Edit Aircraft</div>
+        <button class="topbar-action" id="ae-save" style="color:var(--accent)">Save</button>
+      </div>
+      <div class="modal-body" style="padding:16px">
+        <div class="form-group">
+          <div class="form-label">Registration</div>
+          <input class="form-input" value="${reg}" readonly
+                 style="opacity:0.5;width:160px">
+        </div>
+        <div class="form-group">
+          <div class="form-label">Type</div>
+          <input class="form-input" value="${info.type}" readonly
+                 style="opacity:0.5;width:160px">
+        </div>
+        <div class="form-group">
+          <div class="form-label">Notes</div>
+          <textarea id="ae-notes" class="form-input"
+                    placeholder="Personal notes about this aircraft…"
+                    style="resize:none;height:100px;width:100%;box-sizing:border-box"
+                    >${notes}</textarea>
+        </div>
+      </div>
+    </div>`
+
+  document.body.appendChild(overlay)
+  overlay.querySelector('#ae-notes').focus()
+
+  overlay.querySelector('#ae-cancel').addEventListener('click', () => overlay.remove())
+
+  overlay.querySelector('#ae-save').addEventListener('click', async () => {
+    const newNotes = overlay.querySelector('#ae-notes').value.trim()
+    const newSettings = {
+      ...state.aircraftSettings,
+      [reg]: { ...(state.aircraftSettings?.[reg] || {}), notes: newNotes },
+    }
+    setAircraftSettings(newSettings)
+    try {
+      await saveAircraftSettings(state.user.uid, newSettings)
+      overlay.remove()
+      showToast('Saved', 'success')
+      // Refresh notes row without full re-render
+      const section = root.querySelector('.cd-section')
+      const existingNotes = section?.querySelector('.ad-notes-row')
+      if (section) {
+        if (existingNotes) existingNotes.remove()
+        if (newNotes) {
+          section.insertAdjacentHTML('beforeend',
+            `<div class="cd-info-row ad-notes-row">
+               <span class="cd-info-icon">📝</span>
+               <span class="cd-info-label">Notes</span>
+               <span class="cd-info-value" style="white-space:pre-wrap">${newNotes}</span>
+             </div>`)
+        }
+      }
+    } catch (e) {
+      showToast('Save failed', 'error')
+      setAircraftSettings(state.aircraftSettings)
+    }
+  })
+}
