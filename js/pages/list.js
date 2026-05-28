@@ -309,7 +309,19 @@ function renderFlightsList(root, allFlights) {
 function renderRows(root, flights) {
   const list = root.querySelector('#flight-list')
   if (!list) return
-  list.innerHTML = flights.map(f => flightRowHtml(f)).join('')
+
+  let lastYear = null
+  const html = []
+  for (const f of flights) {
+    const yr = (f.date || '').slice(0, 4)
+    if (yr && yr !== lastYear) {
+      html.push(`<li class="year-divider" aria-hidden="true">${yr}</li>`)
+      lastYear = yr
+    }
+    html.push(flightRowHtml(f))
+  }
+  list.innerHTML = html.join('')
+
   list.querySelectorAll('.flight-row').forEach(row => {
     row.addEventListener('click', () => navigate('detail/' + row.dataset.id))
   })
