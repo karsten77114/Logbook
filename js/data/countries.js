@@ -114,13 +114,13 @@ export function showCountryPicker(currentCode, onSelect) {
       <div class="airline-picker-title">Select Nationality</div>
       <div style="width:64px"></div>
     </div>
-    <div class="country-picker-list" id="cp-list">
-      ${_countryListHtml(COUNTRIES, currentCode)}
-    </div>
-    <div class="airline-picker-search-bar">
+    <div class="airline-picker-search-bar" style="border-top:none;border-bottom:1px solid var(--border)">
       <input class="airline-picker-search" id="cp-search"
              type="text" placeholder="Search country…"
-             autocomplete="off" autocorrect="off">
+             autocomplete="off" autocorrect="off" autocapitalize="off">
+    </div>
+    <div class="country-picker-list" id="cp-list">
+      ${_countryListHtml(COUNTRIES, currentCode)}
     </div>`
   document.body.appendChild(overlay)
 

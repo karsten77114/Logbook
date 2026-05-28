@@ -142,12 +142,11 @@ html, body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-bottom: calc(var(--safe-bot) + 80px);
+  padding-bottom: calc(var(--safe-bot) + 16px);
 }
 
 /* ── Bottom nav ──────────────────────────────── */
 .bottom-nav {
-  position: absolute; bottom: 0; left: 0; right: 0;
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -1993,7 +1992,7 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   border-radius: 8px;
   overflow: hidden;
-  background: var(--surface);
+  background: #fff;
 }
 
 .airline-card-fallback {

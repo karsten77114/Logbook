@@ -251,13 +251,13 @@ function _showAirlinePicker(currentIata, root, s) {
       <div class="airline-picker-title">Select Airline</div>
       <div style="width:64px"></div>
     </div>
-    <div class="airline-picker-grid" id="ap-grid">
-      ${_airlineGridHtml(AIRLINES, currentIata)}
-    </div>
-    <div class="airline-picker-search-bar">
+    <div class="airline-picker-search-bar" style="border-top:none;border-bottom:1px solid var(--border)">
       <input class="airline-picker-search" id="ap-search"
              type="text" placeholder="Search by code or name"
-             autocomplete="off" autocorrect="off">
+             autocomplete="off" autocorrect="off" autocapitalize="off">
+    </div>
+    <div class="airline-picker-grid" id="ap-grid">
+      ${_airlineGridHtml(AIRLINES, currentIata)}
     </div>`
   document.body.appendChild(overlay)
 
@@ -284,6 +284,10 @@ function _showAirlinePicker(currentIata, root, s) {
       const img = document.createElement('img')
       img.src = getAirlineLogoUrl(iata)
       img.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;inset:0;border-radius:8px'
+      img.onload = () => {
+        const f = wrap.querySelector('.airline-card-fallback')
+        if (f) f.style.display = 'none'
+      }
       img.onerror = () => img.remove()
       wrap.style.position = 'relative'
       wrap.appendChild(img)
