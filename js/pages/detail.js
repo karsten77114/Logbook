@@ -29,7 +29,7 @@ export async function renderDetail(root, params) {
 
   try {
     const f = await getFlight(state.user.uid, flightId)
-    if (!f) { showToast('找不到記錄', 'error'); navigate('list'); return }
+    if (!f) { showToast('Record not found', 'error'); navigate('list'); return }
 
     root.querySelector('#detail-title').textContent =
       `${f.from || '?'} → ${f.to || '?'}`
@@ -41,7 +41,7 @@ export async function renderDetail(root, params) {
       showConfirm(root, async () => {
         await deleteFlight(state.user.uid, flightId)
         invalidateStats()
-        showToast('已刪除', 'success')
+        showToast('Deleted', 'success')
         navigate('list')
       })
     })
@@ -59,7 +59,7 @@ export async function renderDetail(root, params) {
     root.querySelector('#detail-scroll').innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">⚠</div>
-        <div class="empty-state-title">載入失敗</div>
+        <div class="empty-state-title">Load failed</div>
         <div class="empty-state-sub">${e.message}</div>
       </div>`
   }
@@ -147,7 +147,7 @@ function buildDetailHtml(f) {
         <div class="detail-card-title">Flight Track</div>
         <div id="track-map-wrap">
           <div style="color:var(--text-faint);font-size:13px;text-align:center;padding:20px">
-            正在查詢軌跡資料…
+            Loading flight track…
           </div>
         </div>
         <!-- Timeline scrubber (hidden until track loads) -->
@@ -216,7 +216,7 @@ async function tryFetchTrack(root, f, flightId) {
   // Ground ops: no airborne time → skip
   if (f.flightTime === 0 && f.offTime === '00:00' && f.onTime === '00:00') {
     wrap.innerHTML = `<div style="color:var(--text-faint);font-size:12px;text-align:center;padding:20px">
-      地面操作，無飛行軌跡</div>`
+      Ground operation — no flight track</div>`
     return
   }
 
@@ -225,7 +225,7 @@ async function tryFetchTrack(root, f, flightId) {
 
   const doFetch = async (ic) => {
     wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
-      ⏳ 查詢 ADS-B 軌跡中…</div>`
+      ⏳ Fetching ADS-B track…</div>`
 
     const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
     const tooOld = (Date.now() / 1000 - begin) > 30 * 86400
@@ -237,7 +237,7 @@ async function tryFetchTrack(root, f, flightId) {
     // Strategy 2: FR24 via Worker proxy (works when Cloudflare allows)
     if (!track?.length && f.registration && f.date) {
       wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
-        ⏳ 查詢 FR24 軌跡中…</div>`
+        ⏳ Fetching FR24 track…</div>`
       track = await fetchTrackFR24(f.registration, f.date, f.from, f.to, f.flightNumber)
     }
 
@@ -253,7 +253,7 @@ async function tryFetchTrack(root, f, flightId) {
       }
     } else {
       wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-        暫無 ADS-B 軌跡資料</div>`
+        No ADS-B track available</div>`
     }
   }
 
@@ -262,7 +262,7 @@ async function tryFetchTrack(root, f, flightId) {
   } else {
     // 先查 hexdb.io 取得 ICAO24
     wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
-      ⏳ 查詢機號中…</div>`
+      ⏳ Looking up registration…</div>`
     try {
       const hexResp = await fetch(
         `https://hexdb.io/reg-hex?reg=${encodeURIComponent(f.registration)}`,
@@ -614,10 +614,10 @@ function showConfirm(root, onConfirm) {
   overlay.innerHTML = `
     <div class="modal-sheet" style="gap:20px">
       <div class="modal-handle"></div>
-      <div style="text-align:center; font-size:16px; color:var(--text)">確定刪除這筆記錄？</div>
-      <div style="text-align:center; font-size:13px; color:var(--text-dim)">此操作無法復原</div>
-      <button class="btn btn-danger btn-full" id="confirm-del">確定刪除</button>
-      <button class="btn btn-secondary btn-full" id="cancel-del">取消</button>
+      <div style="text-align:center; font-size:16px; color:var(--text)">Delete this flight record?</div>
+      <div style="text-align:center; font-size:13px; color:var(--text-dim)">This action cannot be undone</div>
+      <button class="btn btn-danger btn-full" id="confirm-del">Delete</button>
+      <button class="btn btn-secondary btn-full" id="cancel-del">Cancel</button>
     </div>`
 
   document.body.appendChild(overlay)

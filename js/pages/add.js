@@ -275,17 +275,16 @@ function renderSheetList(listEl, crewSlots, slotIdx, query) {
 
   if (list.length === 0) {
     listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-faint);font-size:13px">
-      ${q ? '找不到符合的組員' : '尚無組員資料，請至 Settings → Crew 新增'}
+      ${q ? 'No crew found' : 'No crew yet. Tap ＋ to add.'}
     </div>`
     return
   }
 
   const currentId = slotIdx >= 0 ? crewSlots[slotIdx]?.id : null
   listEl.innerHTML = list.map(c => {
-    const initials = initials2(c)
     const checked  = c.id === currentId
     return `<div class="sheet-crew-item" data-id="${c.id}">
-      <div class="sci-avatar">${initials}</div>
+      <div class="sci-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
       <div class="sci-name">${c.firstName} ${c.lastName}
         <span style="font-size:11px;color:var(--text-dim);display:block">${c.position || ''}</span>
       </div>
@@ -348,14 +347,14 @@ function validateStep(root, form, step) {
     const date = root.querySelector('#f-date')?.value
     const from = root.querySelector('#f-from')?.value
     const to   = root.querySelector('#f-to')?.value
-    if (!date)        { showToast('請填入日期', 'error'); return false }
-    if (!from || !to) { showToast('請填入出發及目的地機場', 'error'); return false }
+    if (!date)        { showToast('Please enter a date', 'error'); return false }
+    if (!from || !to) { showToast('Please enter departure and arrival airports', 'error'); return false }
   }
   if (step === 1) {
     const out = root.querySelector('#f-out')?.value
     const inT = root.querySelector('#f-in')?.value
     if (!isValidHm(out) || !isValidHm(inT)) {
-      showToast('請填入 OUT / IN 時間（HHMM）', 'error'); return false
+      showToast('Please enter OUT / IN times (HHMM)', 'error'); return false
     }
   }
   return true
@@ -410,10 +409,10 @@ async function saveFlight(root, form, crewSlots, btn) {
   try {
     await addFlight(state.user.uid, form)
     invalidateStats()
-    showToast('✓ 已儲存', 'success')
+    showToast('✓ Saved', 'success')
     navigate('list')
   } catch (e) {
-    showToast(e.message || '儲存失敗', 'error')
+    showToast(e.message || 'Save failed', 'error')
     btn.disabled = false
     btn.textContent = 'SAVE'
     btn.classList.add('save')
@@ -596,7 +595,7 @@ function step3Html(form) {
           ${regOptions}
           ${customOptions}
         </select>
-        <button class="wiz-inline-add" id="btn-add-ac" title="新增機號">＋</button>
+        <button class="wiz-inline-add" id="btn-add-ac" title="Add Aircraft">＋</button>
       </div>
 
       <div class="input-row">
@@ -715,7 +714,7 @@ function crewSheetHtml() {
           <div class="sheet-head-title">Select Crew</div>
           <button class="sheet-close" id="sheet-add-crew"
                   style="color:var(--accent);font-size:22px;margin-right:4px"
-                  title="新增組員">＋</button>
+                  title="Add Crew Member">＋</button>
           <button class="sheet-close" id="sheet-close">✕</button>
         </div>
         <div class="sheet-search-wrap">
@@ -751,18 +750,18 @@ function showAircraftQuickAdd(root, form) {
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">新增機號</div>
+      <div class="modal-title">Add Aircraft</div>
       <div class="form-group">
-        <label class="form-label">機號 (Registration)</label>
+        <label class="form-label">Registration</label>
         <input class="form-input mono" id="qac-reg" type="text"
                placeholder="B-12345" autocapitalize="characters" autocomplete="off">
       </div>
       <div class="form-group">
-        <label class="form-label">機型 (Type)</label>
+        <label class="form-label">Type</label>
         <input class="form-input mono" id="qac-type" type="text"
                placeholder="A321-252NX" autocomplete="off">
       </div>
-      <button class="btn btn-primary btn-full" id="qac-save">新增</button>
+      <button class="btn btn-primary btn-full" id="qac-save">Add</button>
     </div>`
   document.body.appendChild(overlay)
   setTimeout(() => overlay.querySelector('#qac-reg')?.focus(), 50)
@@ -770,7 +769,7 @@ function showAircraftQuickAdd(root, form) {
   overlay.querySelector('#qac-save').addEventListener('click', () => {
     const reg  = (overlay.querySelector('#qac-reg').value  || '').trim().toUpperCase()
     const type = (overlay.querySelector('#qac-type').value || '').trim()
-    if (!reg || !type) { showToast('請填入機號和機型', 'error'); return }
+    if (!reg || !type) { showToast('Registration and type required', 'error'); return }
 
     addCustomAircraftEntry(reg, type)
 
@@ -792,7 +791,7 @@ function showAircraftQuickAdd(root, form) {
     if (typeEl) typeEl.textContent = type
 
     overlay.remove()
-    showToast('已新增機號', 'success')
+    showToast('Aircraft added', 'success')
   })
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
@@ -807,27 +806,27 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">新增組員</div>
+      <div class="modal-title">Add Crew Member</div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">名字</label>
+          <label class="form-label">First Name</label>
           <input class="form-input" id="qc-first" type="text" placeholder="Po-Kang">
         </div>
         <div class="form-group">
-          <label class="form-label">姓氏</label>
+          <label class="form-label">Last Name</label>
           <input class="form-input" id="qc-last" type="text" placeholder="Chang">
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">職位</label>
+        <label class="form-label">Position</label>
         <select class="form-select" id="qc-pos">
-          <option value="">— 未設定 —</option>
-          ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
+          <option value="">— Not set —</option>
+          ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}">${p}</option>`
           ).join('')}
         </select>
       </div>
-      <button class="btn btn-primary btn-full" id="qc-save">新增</button>
+      <button class="btn btn-primary btn-full" id="qc-save">Add</button>
     </div>`
   document.body.appendChild(overlay)
   setTimeout(() => overlay.querySelector('#qc-first')?.focus(), 50)
@@ -836,7 +835,7 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
     const first = (overlay.querySelector('#qc-first').value || '').trim()
     const last  = (overlay.querySelector('#qc-last').value  || '').trim()
     const pos   = overlay.querySelector('#qc-pos').value
-    if (!first && !last) { showToast('請填入名字', 'error'); return }
+    if (!first && !last) { showToast('Name is required', 'error'); return }
 
     const id   = `crew_${Date.now()}`
     const data = { firstName: first, lastName: last, position: pos, active: true }
@@ -845,9 +844,9 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
       state.crew = [...(state.crew || []), { id, ...data }]
       overlay.remove()
       renderSheetList(listEl, crewSlots, slotIdx, searchEl?.value || '')
-      showToast('已新增組員', 'success')
+      showToast('Crew member added', 'success')
     } catch (e) {
-      showToast('新增失敗', 'error')
+      showToast('Add failed', 'error')
     }
   })
 

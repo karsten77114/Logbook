@@ -64,7 +64,7 @@ function buildShell() {
           <span class="hub-chevron" id="hub-chevron">▾</span>
         </button>
         <button class="topbar-action" id="hub-top-add"
-                style="font-size:22px;display:none" title="新增">＋</button>
+                style="font-size:22px;display:none" title="Add">＋</button>
       </div>
 
       <!-- Dropdown -->
@@ -90,14 +90,14 @@ function buildShell() {
       <!-- Search (Flights only) -->
       <div class="search-bar" id="search-bar" style="display:none">
         <input class="search-input" id="search-input" type="search"
-               placeholder="航班號、機場、機師…" autocomplete="off">
+               placeholder="Flight, airport, crew…" autocomplete="off">
       </div>
 
       <!-- Content -->
       <div class="scroll" id="list-scroll" style="min-height:0"></div>
 
       <!-- FAB (Flights only) -->
-      <button class="fab" id="fab-add" title="新增航班" style="display:none">＋</button>
+      <button class="fab" id="fab-add" title="Add Flight" style="display:none">＋</button>
 
       ${bottomNav()}
     </div>`
@@ -217,7 +217,7 @@ async function renderFlightsSection(root) {
       if (scroll) scroll.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⚠</div>
-          <div class="empty-state-title">載入失敗</div>
+          <div class="empty-state-title">Load failed</div>
           <div class="empty-state-sub">${e.message}</div>
         </div>`
       return
@@ -290,8 +290,8 @@ function renderFlightsList(root, allFlights) {
     scroll.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">✈</div>
-        <div class="empty-state-title">${q ? '找不到符合的航班' : '尚無飛行記錄'}</div>
-        <div class="empty-state-sub">${q ? '試試其他關鍵字' : '點右下角 ＋ 新增第一筆航班'}</div>
+        <div class="empty-state-title">${q ? 'No matching flights' : 'No flight records'}</div>
+        <div class="empty-state-sub">${q ? 'Try another keyword' : 'Tap ＋ to add your first flight'}</div>
       </div>`
     return
   }
@@ -363,7 +363,7 @@ function renderCrewSection(root) {
       await saveCrew(state.user.uid, id, data)
       state.crew.push(crew)
       renderCrewSection(root)
-      showToast('已新增', 'success')
+      showToast('Added', 'success')
     })
   }
   _paintCrewList(root)
@@ -381,8 +381,8 @@ function _paintCrewList(root) {
     scroll.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">👥</div>
-        <div class="empty-state-title">尚無機師資料</div>
-        <div class="empty-state-sub">點右上角 ＋ 新增</div>
+        <div class="empty-state-title">No crew yet</div>
+        <div class="empty-state-sub">Tap ＋ to add</div>
       </div>`
     return
   }
@@ -408,11 +408,10 @@ function _paintCrewList(root) {
 }
 
 function crewRowHtml(c) {
-  const initials = `${c.firstName?.[0] || ''}${c.lastName?.[0] || ''}`.toUpperCase() || '?'
   const active   = isCrewActive(c)
   return `
     <div class="hub-row" data-crew-id="${c.id}">
-      <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}">${initials}</div>
+      <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
       <div class="hub-row-info">
         <div class="hub-row-name">${c.firstName || ''} ${c.lastName || ''}</div>
         <div class="hub-row-sub">${c.position || '—'}</div>
@@ -432,39 +431,39 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">${isNew ? '新增機師' : '編輯機師'}</div>
+      <div class="modal-title">${isNew ? 'Add Crew' : 'Edit Crew'}</div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">名字</label>
+          <label class="form-label">First Name</label>
           <input class="form-input" id="cr-first" type="text" value="${c.firstName || ''}">
         </div>
         <div class="form-group">
-          <label class="form-label">姓氏</label>
+          <label class="form-label">Last Name</label>
           <input class="form-input" id="cr-last" type="text" value="${c.lastName || ''}">
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">職位</label>
+        <label class="form-label">Position</label>
         <select class="form-select" id="cr-position">
-          <option value="" ${!c.position ? 'selected' : ''}>— 未設定 —</option>
-          ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
+          <option value="" ${!c.position ? 'selected' : ''}>— Not set —</option>
+          ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}" ${p === c.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
         </select>
       </div>
 
       <div class="form-group">
-        <label class="form-label">狀態</label>
+        <label class="form-label">Status</label>
         <div class="hub-toggle-row" id="cr-active-toggle" data-active="${c.active !== false}">
           <span class="hub-toggle-label" id="cr-active-label">${c.active !== false ? '✓ Active' : '✕ Inactive'}</span>
           <div class="hub-toggle-switch ${c.active !== false ? 'on' : ''}"></div>
         </div>
       </div>
 
-      <button class="btn btn-primary btn-full" id="crew-save">儲存</button>
-      ${!isNew ? `<button class="btn btn-danger btn-full" id="crew-del">刪除此機師</button>` : ''}
+      <button class="btn btn-primary btn-full" id="crew-save">Save</button>
+      ${!isNew ? `<button class="btn btn-danger btn-full" id="crew-del">Delete Crew Member</button>` : ''}
     </div>`
   document.body.appendChild(overlay)
 
@@ -487,7 +486,7 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
       active:    toggleRow?.dataset.active !== 'false',
     }
     if (!data.firstName && !data.lastName) {
-      showToast('請填入名字', 'error'); return
+      showToast('Name is required', 'error'); return
     }
     await onSave(data)
     overlay.remove()
@@ -568,14 +567,14 @@ const _DEFAULT_EXPERIENCES = [
     name:         'APEX Flight Academy',
     startDate:    '2015-10-01',
     endDate:      '2017-04-03',
-    note:         'CPL 訓練 — DA40 / DA42',
+    note:         'CPL Training — DA40 / DA42',
     autoCalc:     false,
     linkedTypes:  ['DA40-NG', 'DA42-NG', 'DA40-NG-FTD', 'DA42-NG-FTD'],
     manualMinutes: 12102,  // 201:42
   },
   {
     _id:          'mandarin',
-    name:         '華信航空 (Mandarin Airlines)',
+    name:         'Mandarin Airlines',
     startDate:    '',
     endDate:      '',
     note:         'ATR72-600',
@@ -585,7 +584,7 @@ const _DEFAULT_EXPERIENCES = [
   },
   {
     _id:          'starlux',
-    name:         '星宇航空 (Starlux Airlines)',
+    name:         'Starlux Airlines',
     startDate:    '',
     endDate:      '',
     note:         'A321-252NX',
@@ -653,11 +652,11 @@ async function renderExperienceSection(root) {
     career = [...career, { ..._DEFAULT_EXPERIENCES[0] }]
     needsSave = true
   }
-  if (!_hasEntry(career, ['Mandarin', '華信', 'mandarin'])) {
+  if (!_hasEntry(career, ['Mandarin', 'mandarin'])) {
     career = [...career, { ..._DEFAULT_EXPERIENCES[1] }]
     needsSave = true
   }
-  if (!_hasEntry(career, ['Starlux', '星宇', 'starlux'])) {
+  if (!_hasEntry(career, ['Starlux', 'starlux'])) {
     career = [...career, { ..._DEFAULT_EXPERIENCES[2] }]
     needsSave = true
   }
@@ -665,7 +664,7 @@ async function renderExperienceSection(root) {
   if (needsSave) {
     setCareer(career)
     await saveCareer(uid, career)
-    showToast('已自動建立職涯記錄', 'success')
+    showToast('Career records created', 'success')
   }
 
   // 載入所有航班（用於 autoCalc）
@@ -681,7 +680,7 @@ async function renderExperienceSection(root) {
       await saveCareer(uid, newCareer)
       setCareer(newCareer)
       _paintExperience(root, allFlights)
-      showToast('已新增', 'success')
+      showToast('Added', 'success')
     })
   }
 
@@ -712,7 +711,7 @@ function _paintExperience(root, allFlights = []) {
     <div class="hub-section-label" style="margin-top:8px">Career Records</div>
     <div class="hub-list">
       ${entries.length === 0
-        ? `<div class="hub-empty-row">點右上角 ＋ 新增</div>`
+        ? `<div class="hub-empty-row">Tap ＋ to add</div>`
         : entries.map((e, i) => expRowHtml(e, i)).join('')}
     </div>
   `
@@ -726,13 +725,13 @@ function _paintExperience(root, allFlights = []) {
         await saveCareer(state.user.uid, newCareer)
         setCareer(newCareer)
         _paintExperience(root, allFlights)
-        showToast('已更新', 'success')
+        showToast('Updated', 'success')
       }, async () => {
         const newCareer = state.career.filter((_, i) => i !== idx)
         await saveCareer(state.user.uid, newCareer)
         setCareer(newCareer)
         _paintExperience(root, allFlights)
-        showToast('已刪除', 'success')
+        showToast('Deleted', 'success')
       })
     })
   })
@@ -742,7 +741,7 @@ function expRowHtml(e, i) {
   const startStr = e.range.start || null
   const endStr   = e.range.end   || null
   const start    = startStr ? _fmtExpDate(startStr) : '—'
-  const end      = endStr   ? _fmtExpDate(endStr)   : '至今'
+  const end      = endStr   ? _fmtExpDate(endStr)   : 'Present'
   const hours    = e.computed > 0 ? fmtDuration(e.computed) : '—'
   const autoTag  = e.autoCalc
     ? `<span class="exp-auto-tag">AUTO</span>`
@@ -786,41 +785,41 @@ function showExpEditSheet(root, entry, allFlights, onSave, onDelete) {
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">${isNew ? '新增記錄' : '編輯記錄'}</div>
+      <div class="modal-title">${isNew ? 'Add Record' : 'Edit Record'}</div>
 
       <!-- Name -->
       <div class="form-group">
-        <label class="form-label">名稱</label>
+        <label class="form-label">Name</label>
         <input class="form-input" id="exp-name" type="text"
                value="${e.name !== '—' ? (e.name || '') : ''}"
-               placeholder="例：星宇航空、ATPL 訓練…">
+               placeholder="e.g. Starlux Airlines, ATPL Training…">
       </div>
 
       <!-- Date range -->
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">開始日期</label>
+          <label class="form-label">Start Date</label>
           <input class="form-input" id="exp-start" type="date" value="${e.startDate || ''}">
         </div>
         <div class="form-group">
-          <label class="form-label">結束（空白=至今）</label>
+          <label class="form-label">End (blank = present)</label>
           <input class="form-input" id="exp-end" type="date" value="${e.endDate || ''}">
         </div>
       </div>
 
       <!-- Time mode toggle -->
       <div class="form-group">
-        <label class="form-label">飛行時數</label>
+        <label class="form-label">Flight Hours</label>
         <div class="exp-time-modes">
-          <button class="exp-mode-btn ${!isAuto ? 'active' : ''}" id="mode-manual">手動輸入</button>
-          <button class="exp-mode-btn ${isAuto  ? 'active' : ''}" id="mode-auto">從航班自動計算</button>
+          <button class="exp-mode-btn ${!isAuto ? 'active' : ''}" id="mode-manual">Manual</button>
+          <button class="exp-mode-btn ${isAuto  ? 'active' : ''}" id="mode-auto">Auto from Flights</button>
         </div>
       </div>
 
       <!-- Manual time -->
       <div id="panel-manual" style="${isAuto ? 'display:none' : ''}">
         <div class="form-group">
-          <label class="form-label">總時數（小時，如 201.70）</label>
+          <label class="form-label">Total hours (e.g. 201.70)</label>
           <input class="form-input mono" id="exp-hours" type="number"
                  inputmode="decimal" step="0.01" min="0"
                  value="${!isAuto && e.manualMinutes ? (e.manualMinutes / 60).toFixed(2) : ''}"
@@ -831,25 +830,25 @@ function showExpEditSheet(root, entry, allFlights, onSave, onDelete) {
       <!-- Auto calc -->
       <div id="panel-auto" style="${isAuto ? '' : 'display:none'}">
         <div class="form-group">
-          <label class="form-label">依機型計算（逗號分隔，空白=全部）</label>
+          <label class="form-label">Filter by type (comma-separated)</label>
           <input class="form-input mono" id="exp-types" type="text"
                  value="${(e.linkedTypes || []).join(', ')}"
                  placeholder="A321-252NX, ATR72-600">
         </div>
         <div class="exp-auto-preview">
-          目前計算結果：<strong id="exp-preview">${previewMin > 0 ? fmtDuration(previewMin) : '—'}</strong>
+          Current result: <strong id="exp-preview">${previewMin > 0 ? fmtDuration(previewMin) : '—'}</strong>
         </div>
       </div>
 
       <!-- Note -->
       <div class="form-group">
-        <label class="form-label">備註（可選）</label>
+        <label class="form-label">Note (optional)</label>
         <input class="form-input" id="exp-note" type="text"
-               value="${e.note || ''}" placeholder="機型、職位等">
+               value="${e.note || ''}" placeholder="Type, position, etc.">
       </div>
 
-      <button class="btn btn-primary btn-full" id="exp-save">儲存</button>
-      ${!isNew ? `<button class="btn btn-danger btn-full" id="exp-del">刪除這段記錄</button>` : ''}
+      <button class="btn btn-primary btn-full" id="exp-save">Save</button>
+      ${!isNew ? `<button class="btn btn-danger btn-full" id="exp-del">Delete Record</button>` : ''}
     </div>`
   document.body.appendChild(overlay)
 
@@ -883,7 +882,7 @@ function showExpEditSheet(root, entry, allFlights, onSave, onDelete) {
 
   overlay.querySelector('#exp-save').addEventListener('click', async () => {
     const name = overlay.querySelector('#exp-name').value.trim()
-    if (!name) { showToast('請填入名稱', 'error'); return }
+    if (!name) { showToast('Name is required', 'error'); return }
 
     const typesRaw   = overlay.querySelector('#exp-types').value
     const linkedTypes = typesRaw.split(',').map(t => t.trim()).filter(Boolean)

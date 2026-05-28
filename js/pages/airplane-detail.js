@@ -50,7 +50,7 @@ export async function renderAirplaneDetail(root, params) {
     root.querySelector('#ad-scroll').innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">⚠</div>
-        <div class="empty-state-title">載入失敗</div>
+        <div class="empty-state-title">Load failed</div>
         <div class="empty-state-sub">${e.message}</div>
       </div>`
   }
@@ -119,7 +119,7 @@ function _paintDetail(root, reg, info, stats, flights) {
     ${flights.length === 0
       ? `<div class="empty-state" style="padding:40px 0">
            <div class="empty-state-icon">✈</div>
-           <div class="empty-state-sub">尚無此機號的飛行記錄</div>
+           <div class="empty-state-sub">No flight records for this aircraft</div>
          </div>`
       : Object.entries(byYear).map(([yr, fls]) => `
           <div class="cd-year-label">${yr}</div>
@@ -156,9 +156,9 @@ function _paintDetail(root, reg, info, stats, flights) {
     setAircraftSettings(newSettings)
     try {
       await saveAircraftSettings(state.user.uid, newSettings)
-      showToast(_active ? '已設為 Active' : '已設為 Inactive', 'success')
+      showToast(_active ? 'Set to Active' : 'Set to Inactive', 'success')
     } catch (e) {
-      showToast('儲存失敗', 'error')
+      showToast('Save failed', 'error')
       // Revert
       _active = !_active
       setAircraftSettings({ ...newSettings, [reg]: { active: _active } })

@@ -1,10 +1,12 @@
 // ══════════════════════════════════════════════
 // Dashboard — Pilot Home Screen
 // ══════════════════════════════════════════════
-import { getAllFlights }     from '../db.js'
-import { state }             from '../state.js'
-import { fmtDuration }       from '../utils/time.js'
-import { navigate }          from '../app.js'
+import { getAllFlights, saveProfile }   from '../db.js'
+import { state, setProfile }            from '../state.js'
+import { fmtDuration }                  from '../utils/time.js'
+import { navigate, showToast }          from '../app.js'
+import { AIRLINES, getAirlineLogoUrl,
+         getAirlineByIata }             from '../data/airlines.js'
 
 const FTD_REGS = new Set(['T12-FTD-01', 'T12-FTD-02'])
 
@@ -22,7 +24,7 @@ export async function renderDashboard(root) {
   } catch (e) {
     root.querySelector('#dash-scroll').innerHTML =
       `<div class="empty-state"><div class="empty-state-icon">⚠</div>
-       <div class="empty-state-title">載入失敗</div>
+       <div class="empty-state-title">Load failed</div>
        <div class="empty-state-sub">${e.message}</div></div>`
   }
 }
@@ -161,15 +163,16 @@ function buildMonthly(flights, months) {
 // ── Render ────────────────────────────────────
 
 function renderAll(root, s, flights) {
-  const prof  = state.profile || {}
-  const name  = prof.name || state.user?.displayName || '—'
-  const airline = prof.airline || ''
+  const prof       = state.profile || {}
+  const name       = prof.name || state.user?.displayName || '—'
+  const airline    = prof.airline    || ''
+  const airlineIata = prof.airlineIata || ''
 
   const scroll = root.querySelector('#dash-scroll')
   if (!scroll) return
 
   scroll.innerHTML = `
-    ${heroHtml(name, airline, s)}
+    ${heroHtml(name, airline, airlineIata, s)}
     ${statsGridHtml(s)}
     ${activityHtml(s)}
     ${currencyHtml(s)}
@@ -179,27 +182,151 @@ function renderAll(root, s, flights) {
     <div style="height:24px"></div>
   `
 
-  // click handlers
+  // Recent flight rows
   scroll.querySelectorAll('.recent-row').forEach(row => {
     row.addEventListener('click', () => navigate('detail/' + row.dataset.id))
   })
+
+  // Airline logo tap → picker
+  const logoBtnEl = scroll.querySelector('#dash-logo-btn')
+  if (logoBtnEl) {
+    // Load tail image programmatically so we can handle errors cleanly
+    if (airlineIata) {
+      const img = document.createElement('img')
+      img.src = getAirlineLogoUrl(airlineIata)
+      img.style.cssText = 'width:100%;height:100%;object-fit:contain'
+      img.onerror = () => { logoBtnEl.innerHTML = '<span style="font-size:24px">✈</span>' }
+      logoBtnEl.innerHTML = ''
+      logoBtnEl.appendChild(img)
+    }
+    logoBtnEl.addEventListener('click', () => _showAirlinePicker(airlineIata, root, s))
+  }
 }
 
 // ── Hero ──────────────────────────────────────
 
-function heroHtml(name, airline, s) {
+function formatPilotName(name) {
+  if (!name) return '—'
+  // "Chang, Po-Kang" → "PO-KANG CHANG"
+  if (name.includes(',')) {
+    const [last, first] = name.split(',').map(s => s.trim())
+    return `${first} ${last}`.toUpperCase()
+  }
+  return name.toUpperCase()
+}
+
+function heroHtml(name, airline, airlineIata, s) {
+  const displayName = formatPilotName(name)
   return `
     <div class="dash-hero">
-      <div class="dash-airline-logo">✈</div>
+      <div class="dash-airline-logo" id="dash-logo-btn" style="cursor:pointer;overflow:hidden;padding:0;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:24px">✈</span>
+      </div>
       <div class="dash-pilot-info">
-        <div class="dash-pilot-name">${name.toUpperCase()}</div>
-        ${airline ? `<div class="dash-airline-name">${airline}</div>` : ''}
+        <div class="dash-pilot-name">${displayName}</div>
+        ${airline ? `<div class="dash-airline-name">${airline}</div>` : '<div class="dash-airline-name" style="color:var(--text-faint);font-size:11px">Tap logo to select airline</div>'}
       </div>
       <div class="dash-grand-total">
         <div class="dash-gt-value">${fmtDuration(s.block)}</div>
         <div class="dash-gt-label">Grand Total</div>
       </div>
     </div>`
+}
+
+// ── Airline Picker ────────────────────────────
+
+function _showAirlinePicker(currentIata, root, s) {
+  let filteredAirlines = AIRLINES
+
+  const overlay = document.createElement('div')
+  overlay.className = 'airline-picker-overlay'
+  overlay.innerHTML = `
+    <div class="airline-picker-topbar">
+      <button class="airline-picker-cancel" id="ap-cancel">Cancel</button>
+      <div class="airline-picker-title">Select Airline</div>
+      <div style="width:64px"></div>
+    </div>
+    <div class="airline-picker-grid" id="ap-grid">
+      ${_airlineGridHtml(AIRLINES, currentIata)}
+    </div>
+    <div class="airline-picker-search-bar">
+      <input class="airline-picker-search" id="ap-search"
+             type="text" placeholder="Search by code or name"
+             autocomplete="off" autocorrect="off">
+    </div>`
+  document.body.appendChild(overlay)
+
+  // Cancel
+  overlay.querySelector('#ap-cancel').addEventListener('click', () => overlay.remove())
+
+  // Search
+  overlay.querySelector('#ap-search').addEventListener('input', e => {
+    const q = e.target.value.toLowerCase().trim()
+    filteredAirlines = q
+      ? AIRLINES.filter(a =>
+          a.iata.toLowerCase().includes(q) ||
+          a.name.toLowerCase().includes(q)
+        )
+      : AIRLINES
+    overlay.querySelector('#ap-grid').innerHTML = _airlineGridHtml(filteredAirlines, currentIata)
+    attachGridClicks()
+  })
+
+  function _loadImagesInGrid(gridEl) {
+    gridEl.querySelectorAll('.airline-card-img-wrap').forEach(wrap => {
+      const iata = wrap.dataset.iata
+      if (!iata) return
+      const img = document.createElement('img')
+      img.src = getAirlineLogoUrl(iata)
+      img.style.cssText = 'width:100%;height:100%;object-fit:contain;position:absolute;inset:0;border-radius:8px'
+      img.onerror = () => img.remove()
+      wrap.style.position = 'relative'
+      wrap.appendChild(img)
+    })
+  }
+
+  function attachGridClicks() {
+    const gridEl = overlay.querySelector('#ap-grid')
+    if (gridEl) _loadImagesInGrid(gridEl)
+
+    overlay.querySelectorAll('.airline-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const iata    = card.dataset.iata
+        const airline = getAirlineByIata(iata)
+        if (!airline) return
+        overlay.remove()
+        const newProfile = {
+          ...(state.profile || {}),
+          airlineIata: iata,
+          airline:     airline.name,
+        }
+        try {
+          await saveProfile(state.user.uid, { airlineIata: iata, airline: airline.name })
+          setProfile(newProfile)
+          showToast('Airline updated', 'success')
+          renderAll(root, s, [])
+        } catch (e) {
+          showToast('Save failed', 'error')
+        }
+      })
+    })
+  }
+
+  attachGridClicks()
+}
+
+function _airlineGridHtml(airlines, currentIata) {
+  if (!airlines.length) {
+    return `<div style="grid-column:1/-1;text-align:center;padding:40px 0;color:var(--text-dim)">No airlines found</div>`
+  }
+  return airlines.map(a => `
+    <div class="airline-card ${a.iata === currentIata ? 'selected' : ''}" data-iata="${a.iata}">
+      <div class="airline-card-img-wrap" data-iata="${a.iata}">
+        <div class="airline-card-fallback">${a.iata}</div>
+      </div>
+      <div class="airline-card-iata">${a.iata}</div>
+      <div class="airline-card-name">${a.name}</div>
+    </div>`).join('')
 }
 
 // ── Stats Grid ────────────────────────────────

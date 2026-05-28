@@ -150,9 +150,9 @@ init().catch(e => {
     <div style="display:flex;flex-direction:column;align-items:center;
                 justify-content:center;height:100%;gap:16px;color:#e04040;padding:32px;text-align:center">
       <div style="font-size:32px">⚠</div>
-      <div style="font-size:16px">初始化失敗</div>
+      <div style="font-size:16px">Initialization failed</div>
       <div style="font-size:12px;color:#6888a0">${e.message}</div>
-      <div style="font-size:12px;color:#6888a0">請確認 js/config.js 中的 Firebase 設定是否正確</div>
+      <div style="font-size:12px;color:#6888a0">Please check Firebase config in js/config.js</div>
     </div>`
   hideSplash()
 })

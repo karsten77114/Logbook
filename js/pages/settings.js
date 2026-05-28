@@ -59,37 +59,37 @@ function renderContent(root) {
 
   scroll.innerHTML = `
     <!-- Profile -->
-    <div class="settings-header">個人資料</div>
+    <div class="settings-header">Profile</div>
     <div class="settings-section">
       <div class="settings-row" id="row-name">
-        <span class="settings-row-label">姓名</span>
-        <span class="settings-row-value">${prof.name || '未設定'}</span>
+        <span class="settings-row-label">Name</span>
+        <span class="settings-row-value">${prof.name || 'Not set'}</span>
         <span class="settings-row-chevron">›</span>
       </div>
     </div>
 
     <!-- Data -->
-    <div class="settings-header">資料管理</div>
+    <div class="settings-header">Data Management</div>
     <div class="settings-section">
       <div class="settings-row" id="row-export">
-        <span class="settings-row-label">匯出備份（JSON）</span>
+        <span class="settings-row-label">Export Backup (JSON)</span>
         <span class="settings-row-chevron">›</span>
       </div>
       <div class="settings-row" id="row-import-tool">
-        <span class="settings-row-label">開啟匯入工具</span>
+        <span class="settings-row-label">Import Tool</span>
         <span class="settings-row-chevron">›</span>
       </div>
     </div>
 
     <!-- Account -->
-    <div class="settings-header">帳號</div>
+    <div class="settings-header">Account</div>
     <div class="settings-section">
       <div class="settings-row" style="color:var(--text-dim)">
-        <span class="settings-row-label">登入帳號</span>
+        <span class="settings-row-label">Signed in as</span>
         <span class="settings-row-value" style="font-size:12px">${state.user?.email || ''}</span>
       </div>
       <div class="settings-row" id="row-logout" style="color:var(--red)">
-        <span class="settings-row-label">登出</span>
+        <span class="settings-row-label">Sign Out</span>
       </div>
     </div>
 
@@ -103,7 +103,7 @@ function renderContent(root) {
 function attachSettingsEvents(root) {
   // Name edit
   root.querySelector('#row-name')?.addEventListener('click', () => {
-    showInputSheet(root, '姓名', state.profile?.name || '', async val => {
+    showInputSheet(root, 'Name', state.profile?.name || '', async val => {
       await saveProfile(state.user.uid, { name: val })
       setProfile({ ...(state.profile || {}), name: val })
       renderContent(root)
@@ -121,9 +121,9 @@ function attachSettingsEvents(root) {
       a.download = `logbook_${new Date().toISOString().slice(0,10)}.json`
       a.click()
       URL.revokeObjectURL(url)
-      showToast(`已匯出 ${flights.length} 筆`, 'success')
+      showToast(`Exported ${flights.length} records`, 'success')
     } catch (e) {
-      showToast('匯出失敗: ' + e.message, 'error')
+      showToast('Export failed: ' + e.message, 'error')
     }
   })
 
@@ -134,7 +134,7 @@ function attachSettingsEvents(root) {
 
   // Logout
   root.querySelector('#row-logout')?.addEventListener('click', () => {
-    showConfirm('確定要登出？', async () => {
+    showConfirm('Sign out?', async () => {
       await logout()
       navigate('login')
     })
@@ -152,7 +152,7 @@ function showInputSheet(root, title, value, onSave) {
       <div class="modal-title">${title}</div>
       <input class="form-input" id="sheet-input" type="text" value="${value}"
              style="font-size:16px">
-      <button class="btn btn-primary btn-full" id="sheet-save">儲存</button>
+      <button class="btn btn-primary btn-full" id="sheet-save">Save</button>
     </div>`
   document.body.appendChild(overlay)
   const inp = overlay.querySelector('#sheet-input')
@@ -160,7 +160,7 @@ function showInputSheet(root, title, value, onSave) {
   overlay.querySelector('#sheet-save').addEventListener('click', async () => {
     await onSave(inp.value.trim())
     overlay.remove()
-    showToast('已儲存', 'success')
+    showToast('Saved', 'success')
   })
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
 }
@@ -173,8 +173,8 @@ function showConfirm(message, onOk) {
     <div class="modal-sheet" style="gap:16px">
       <div class="modal-handle"></div>
       <div style="text-align:center;font-size:15px;color:var(--text)">${message}</div>
-      <button class="btn btn-primary btn-full" id="ok-btn">確定</button>
-      <button class="btn btn-secondary btn-full" id="cancel-btn">取消</button>
+      <button class="btn btn-primary btn-full" id="ok-btn">OK</button>
+      <button class="btn btn-secondary btn-full" id="cancel-btn">Cancel</button>
     </div>`
   document.body.appendChild(overlay)
   overlay.querySelector('#ok-btn').addEventListener('click', () => { overlay.remove(); onOk() })

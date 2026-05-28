@@ -47,7 +47,7 @@ export async function renderCrewDetail(root, params) {
     root.querySelector('#crew-detail-scroll').innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">⚠</div>
-        <div class="empty-state-title">載入失敗</div>
+        <div class="empty-state-title">Load failed</div>
         <div class="empty-state-sub">${e.message}</div>
       </div>`
   }
@@ -56,7 +56,6 @@ export async function renderCrewDetail(root, params) {
 function _paintDetail(root, person, stats, flights) {
   const scroll   = root.querySelector('#crew-detail-scroll')
   const active   = isCrewActive(person)
-  const initials = `${person.firstName?.[0] || ''}${person.lastName?.[0] || ''}`.toUpperCase() || '?'
 
   // Group flights by year
   const byYear = {}
@@ -69,7 +68,7 @@ function _paintDetail(root, person, stats, flights) {
   scroll.innerHTML = `
     <!-- Profile card -->
     <div class="cd-profile-card">
-      <div class="cd-avatar">${initials}</div>
+      <div class="cd-avatar"><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg></div>
       <div class="cd-name">${person.firstName} ${person.lastName}</div>
       <div class="cd-position">${person.position || '—'}</div>
       <div class="cd-stats-row">
@@ -106,7 +105,7 @@ function _paintDetail(root, person, stats, flights) {
             ${active ? 'Active' : 'Inactive'}
           </span>
           <span style="font-size:14px;color:var(--text-dim)" id="cd-active-label">
-            ${active ? '目前出勤中' : '暫時停用'}
+            ${active ? 'Active' : 'Inactive'}
           </span>
         </div>
         <div class="hub-toggle-switch ${active ? 'on' : ''}"></div>
@@ -118,7 +117,7 @@ function _paintDetail(root, person, stats, flights) {
     ${flights.length === 0
       ? `<div class="empty-state" style="padding:40px 0">
            <div class="empty-state-icon">✈</div>
-           <div class="empty-state-sub">尚無共同航班記錄</div>
+           <div class="empty-state-sub">No shared flights yet</div>
          </div>`
       : Object.entries(byYear).map(([yr, fls]) => `
           <div class="cd-year-label">${yr}</div>
@@ -139,7 +138,7 @@ function _paintDetail(root, person, stats, flights) {
     _active = !_active
     toggleRow.dataset.active = _active
     toggleSwitch?.classList.toggle('on', _active)
-    if (toggleLabel) toggleLabel.textContent = _active ? '目前出勤中' : '暫時停用'
+    if (toggleLabel) toggleLabel.textContent = _active ? 'Active' : 'Inactive'
     if (statusBadge) {
       statusBadge.className = `hub-status-badge ${_active ? 'badge-active' : 'badge-inactive'}`
       statusBadge.style.fontSize = '10px'
@@ -150,13 +149,13 @@ function _paintDetail(root, person, stats, flights) {
       await saveCrew(state.user.uid, person.id, { ...personData, active: _active })
       const idx = state.crew.findIndex(c => c.id === person.id)
       if (idx >= 0) state.crew[idx].active = _active
-      showToast(_active ? '已設為 Active' : '已設為 Inactive', 'success')
+      showToast(_active ? 'Set to Active' : 'Set to Inactive', 'success')
     } catch (e) {
       _active = !_active
       toggleRow.dataset.active = _active
       toggleSwitch?.classList.toggle('on', _active)
-      if (toggleLabel) toggleLabel.textContent = _active ? '目前出勤中' : '暫時停用'
-      showToast('儲存失敗', 'error')
+      if (toggleLabel) toggleLabel.textContent = _active ? 'Active' : 'Inactive'
+      showToast('Save failed', 'error')
     }
   })
 
@@ -207,24 +206,24 @@ function _showEditSheet(root, person) {
   overlay.innerHTML = `
     <div class="modal-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">編輯機師</div>
+      <div class="modal-title">Edit Crew</div>
 
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">名字</label>
+          <label class="form-label">First Name</label>
           <input class="form-input" id="cr-first" type="text" value="${person.firstName || ''}">
         </div>
         <div class="form-group">
-          <label class="form-label">姓氏</label>
+          <label class="form-label">Last Name</label>
           <input class="form-input" id="cr-last" type="text" value="${person.lastName || ''}">
         </div>
       </div>
 
       <div class="form-group">
-        <label class="form-label">職位</label>
+        <label class="form-label">Position</label>
         <select class="form-select" id="cr-position">
-          <option value="" ${!person.position ? 'selected' : ''}>— 未設定 —</option>
-          ${['FO','SFO','CA','Check Captain','學生機師','其他'].map(p =>
+          <option value="" ${!person.position ? 'selected' : ''}>— Not set —</option>
+          ${['FO','SFO','CA','Check Captain','Student Pilot','Other'].map(p =>
             `<option value="${p}" ${p === person.position ? 'selected' : ''}>${p}</option>`
           ).join('')}
         </select>
@@ -250,7 +249,7 @@ function _showEditSheet(root, person) {
       </div>
 
       <div class="form-group">
-        <label class="form-label">狀態</label>
+        <label class="form-label">Status</label>
         <div class="hub-toggle-row" id="cr-active-toggle" data-active="${person.active !== false}">
           <span class="hub-toggle-label" id="cr-active-label">
             ${person.active !== false ? '✓ Active' : '✕ Inactive'}
@@ -259,8 +258,8 @@ function _showEditSheet(root, person) {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-full" id="crew-save">儲存</button>
-      <button class="btn btn-danger btn-full" id="crew-del">刪除此機師</button>
+      <button class="btn btn-primary btn-full" id="crew-save">Save</button>
+      <button class="btn btn-danger btn-full" id="crew-del">Delete Crew Member</button>
     </div>`
   document.body.appendChild(overlay)
 
@@ -285,28 +284,28 @@ function _showEditSheet(root, person) {
       nationality:   overlay.querySelector('#cr-national').value.trim(),
       active:        toggleRow?.dataset.active !== 'false',
     }
-    if (!data.firstName && !data.lastName) { showToast('請填入名字', 'error'); return }
+    if (!data.firstName && !data.lastName) { showToast('Name is required', 'error'); return }
     try {
       await saveCrew(state.user.uid, person.id, data)
       const idx = state.crew.findIndex(c => c.id === person.id)
       if (idx >= 0) state.crew[idx] = { id: person.id, ...data }
       overlay.remove()
-      showToast('已更新', 'success')
+      showToast('Updated', 'success')
       // Re-render with updated person
       navigate('crew-detail/' + person.id)
     } catch (e) {
-      showToast('儲存失敗', 'error')
+      showToast('Save failed', 'error')
     }
   })
 
   overlay.querySelector('#crew-del').addEventListener('click', async () => {
-    if (!confirm('確定刪除？')) return
+    if (!confirm('Delete this crew member?')) return
     await deleteCrew(state.user.uid, person.id)
     state.crew = state.crew.filter(c => c.id !== person.id)
     setCrew(state.crew)
     overlay.remove()
     navigate('list')
-    showToast('已刪除', 'success')
+    showToast('Deleted', 'success')
   })
 
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
