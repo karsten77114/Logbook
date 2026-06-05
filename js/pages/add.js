@@ -2,7 +2,8 @@
 // Add Flight — 5-Step Wizard (Prototype Design)
 // ══════════════════════════════════════════════
 import { addFlight, saveCrew,
-         saveCustomAircraftList }  from '../db.js'
+         saveCustomAircraftList,
+         getFlightsByDate }        from '../db.js'
 import { state, setCustomAircraft } from '../state.js'
 import { navigate, showToast }     from '../app.js'
 import { invalidateStats }         from './list.js'
@@ -401,7 +402,7 @@ function collectStep(root, form, step) {
 
 async function saveFlight(root, form, crewSlots, btn) {
   btn.disabled = true
-  btn.textContent = 'Saving…'
+  btn.textContent = 'Checking…'
 
   // Collect remaining steps
   collectStep(root, form, 2)
@@ -412,6 +413,27 @@ async function saveFlight(root, form, crewSlots, btn) {
   form.crewNames = crewSlots.filter(Boolean).map(c => `${c.firstName} ${c.lastName}`)
 
   try {
+    // ── Duplicate flight detection ─────────────
+    if (form.date) {
+      const sameDay = await getFlightsByDate(state.user.uid, form.date)
+      const dup = sameDay.find(f =>
+        f.flightNumber === form.flightNumber &&
+        f.from         === form.from &&
+        f.to           === form.to
+      )
+      if (dup) {
+        const go = confirm(
+          `Duplicate detected:\n${form.date}  ${form.flightNumber || '—'}  ${form.from || '?'} → ${form.to || '?'}\n\nThis flight appears to already exist. Save anyway?`
+        )
+        if (!go) {
+          btn.disabled = false
+          btn.textContent = 'SAVE'
+          btn.classList.add('save')
+          return
+        }
+      }
+    }
+
     await addFlight(state.user.uid, form)
     invalidateStats()
     showToast('✓ Saved', 'success')
@@ -892,6 +914,20 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
     const empId = (overlay.querySelector('#qc-empid').value || '').trim()
     const lic   = (overlay.querySelector('#qc-lic').value   || '').trim()
     if (!first && !last) { showToast('Name is required', 'error'); return }
+
+    // ── Duplicate crew detection ───────────────
+    const existingCrew = state.crew || []
+    const dupByEmpId = empId && existingCrew.find(c => c.employeeId && c.employeeId === empId)
+    const dupByName  = existingCrew.find(c =>
+      `${c.firstName} ${c.lastName}`.toLowerCase() === `${first} ${last}`.toLowerCase()
+    )
+    if (dupByEmpId) {
+      showToast(`Employee ID "${empId}" already exists`, 'error'); return
+    }
+    if (dupByName) {
+      const go = confirm(`A crew member named "${first} ${last}" already exists. Add anyway?`)
+      if (!go) return
+    }
 
     const id   = `crew_${Date.now()}`
     const data = {

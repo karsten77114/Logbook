@@ -574,6 +574,27 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
     if (!data.firstName && !data.lastName) {
       showToast('Name is required', 'error'); return
     }
+
+    // ── Duplicate crew detection (新增時才檢查) ─
+    if (isNew) {
+      const existingCrew = state.crew || []
+      const dupByEmpId = data.employeeId &&
+        existingCrew.find(c => c.employeeId && c.employeeId === data.employeeId)
+      const dupByName = existingCrew.find(c =>
+        `${c.firstName} ${c.lastName}`.toLowerCase() ===
+        `${data.firstName} ${data.lastName}`.toLowerCase()
+      )
+      if (dupByEmpId) {
+        showToast(`Employee ID "${data.employeeId}" already exists`, 'error'); return
+      }
+      if (dupByName) {
+        const go = confirm(
+          `A crew member named "${data.firstName} ${data.lastName}" already exists. Add anyway?`
+        )
+        if (!go) return
+      }
+    }
+
     await onSave(data)
     overlay.remove()
   })

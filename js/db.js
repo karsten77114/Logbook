@@ -95,6 +95,15 @@ export async function getAllFlights(uid) {
 }
 
 /**
+ * 取得特定日期的所有航班（用於重複偵測）
+ */
+export async function getFlightsByDate(uid, date) {
+  const q    = query(collection(db(), 'users', uid, 'flights'), where('date', '==', date))
+  const snap = await getDocs(q)
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+}
+
+/**
  * 取得單筆飛行記錄
  */
 export async function getFlight(uid, flightId) {
