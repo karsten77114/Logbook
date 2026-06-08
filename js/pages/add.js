@@ -160,24 +160,25 @@ export function renderAdd(root) {
       const bt = diffMin(out, inT)
       form.blockTime = bt
       if (blockVal) blockVal.textContent = minHm(bt)
-    }
-    if (isValidHm(off) && isValidHm(on)) {
-      const ft = diffMin(off, on)
-      form.flightTime = ft
-      if (flightVal) flightVal.textContent = minHm(ft)
 
+      // Night time 用 Block time 區間（OUT→IN）計算
       if (!nightInp?.dataset.manual) {
         const date = root.querySelector('#f-date')?.value || form.date
         const from = root.querySelector('#f-from')?.value || form.from
         const to   = root.querySelector('#f-to')?.value   || form.to
         if (date && from && to) {
           try {
-            const nt = calcNightTime(date, normalizeHm(off), normalizeHm(on), from, to)
+            const nt = calcNightTime(date, normalizeHm(out), normalizeHm(inT), from, to)
             form.nightTime = nt
             if (nightInp && !nightInp.dataset.manual) nightInp.value = minHm(nt)
           } catch (_) {}
         }
       }
+    }
+    if (isValidHm(off) && isValidHm(on)) {
+      const ft = diffMin(off, on)
+      form.flightTime = ft
+      if (flightVal) flightVal.textContent = minHm(ft)
     }
   }
 
