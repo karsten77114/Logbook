@@ -42,17 +42,20 @@ function buildShell() {
 }
 
 function bottomNav() {
+  const items = [
+    { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
+    { id: 'list',      icon: '✈', label: 'Flights'   },
+    { id: 'roster',    icon: '📅', label: 'Roster'    },
+    { id: 'settings',  icon: '⚙', label: 'Settings'  },
+  ]
   return `
     <nav class="bottom-nav">
-      <button class="nav-item active" data-nav="dashboard">
-        <span class="nav-icon">⊞</span><span>Dashboard</span>
-      </button>
-      <button class="nav-item" data-nav="list">
-        <span class="nav-icon">✈</span><span>Flights</span>
-      </button>
-      <button class="nav-item" data-nav="settings">
-        <span class="nav-icon">⚙</span><span>Settings</span>
-      </button>
+      ${items.map(i => `
+        <button class="nav-item ${i.id === 'dashboard' ? 'active' : ''}"
+                data-nav="${i.id}">
+          <span class="nav-icon">${i.icon}</span>
+          <span>${i.label}</span>
+        </button>`).join('')}
     </nav>`
 }
 

@@ -110,6 +110,7 @@ function bottomNav() {
   const items = [
     { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
     { id: 'list',      icon: '✈', label: 'Flights'   },
+    { id: 'roster',    icon: '📅', label: 'Roster'    },
     { id: 'settings',  icon: '⚙', label: 'Settings'  },
   ]
   return `

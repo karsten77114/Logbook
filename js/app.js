@@ -17,6 +17,7 @@ import { renderList }            from './pages/list.js'
 import { renderAdd }             from './pages/add.js'
 import { renderDetail }          from './pages/detail.js'
 import { renderSettings }        from './pages/settings.js'
+import { renderRoster }          from './pages/roster.js'
 import { renderCrewDetail }      from './pages/crew-detail.js'
 import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
@@ -101,6 +102,7 @@ function router() {
   switch (page) {
     case 'add':             renderAdd(root, params);            break
     case 'detail':          renderDetail(root, params);         break
+    case 'roster':          renderRoster(root, params);          break
     case 'settings':        renderSettings(root, params);       break
     case 'list':            renderList(root, params);           break
     case 'crew-detail':     renderCrewDetail(root, params);     break

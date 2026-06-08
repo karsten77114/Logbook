@@ -33,6 +33,9 @@ function buildShell() {
         <button class="nav-item" data-nav="list">
           <span class="nav-icon">✈</span><span>Flights</span>
         </button>
+        <button class="nav-item" data-nav="roster">
+          <span class="nav-icon">📅</span><span>Roster</span>
+        </button>
         <button class="nav-item active" data-nav="settings">
           <span class="nav-icon">⚙</span><span>Settings</span>
         </button>
