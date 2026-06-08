@@ -37,11 +37,19 @@ async function addCustomAircraftEntry(reg, type) {
   }
 }
 
-// ── URL params prefill (Kneeboard integration) ─
+// ── URL params prefill (Roster / KneeBoard integration) ─
 function parseUrlParams() {
   const hash   = location.hash
   const search = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
   const p      = new URLSearchParams(search)
+
+  // Decode roster crew from base64 JSON (from PegaSys bookmarklet)
+  let rosterCrew = []
+  const crewB64 = p.get('crew')
+  if (crewB64) {
+    try { rosterCrew = JSON.parse(atob(crewB64)) } catch (_) {}
+  }
+
   return {
     flightNumber:       p.get('fn')   || '',
     date:               p.get('date') || todayUTC(),
@@ -50,6 +58,11 @@ function parseUrlParams() {
     registration:       p.get('reg')  || '',
     aircraftType:       p.get('type') || '',
     flightPlanDistance: parseInt(p.get('dist') || '0', 10),
+    // Roster-injected fields
+    stdUtc:             p.get('std')  || '',   // HHMM UTC e.g. "0745"
+    staUtc:             p.get('sta')  || '',   // HHMM UTC
+    blockMinutes:       parseInt(p.get('block') || '0', 10),
+    rosterCrew,
   }
 }
 
@@ -255,6 +268,23 @@ export function renderAdd(root) {
   // Initial state
   updateNav(root, 0, btnBack, btnNext)
   renderSheetList(sheetList, crewSlots, -1, '')
+
+  // Pre-fill cockpit crew from roster URL params (PegaSys bookmarklet)
+  if (prefill.rosterCrew?.length && state.crew?.length) {
+    const cockpitRanks = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'CP', 'FI'])
+    const cockpit = prefill.rosterCrew.filter(c => cockpitRanks.has(c.rank))
+    let slot = 0
+    for (const rc of cockpit) {
+      if (slot >= crewSlots.length) break
+      const matched = state.crew.find(c =>
+        c.employeeId && c.employeeId === rc.staffId
+      )
+      if (matched && !crewSlots.some(s => s?.id === matched.id)) {
+        crewSlots[slot++] = matched
+      }
+    }
+    if (slot > 0) renderCrewSlots(root, crewSlots)
+  }
 }
 
 // ── Sheet ─────────────────────────────────────
