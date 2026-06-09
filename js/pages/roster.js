@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════
-// Roster Page — PegaSys 月曆版 (v50)
+// Roster Page — PegaSys 月曆版 (v52)
 // ══════════════════════════════════════════════
-import { getDoc, setDoc, doc }  from 'firebase/firestore'
+import { getDoc, setDoc, doc, collection, query, where, getDocs } from 'firebase/firestore'
 import { getFirestore }          from 'firebase/firestore'
 import { getFirebaseApp }        from '../auth.js'
 import { state }                 from '../state.js'
@@ -11,10 +11,11 @@ const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
 const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
-const STYLE_ID    = 'roster-cal-v1'
+const STYLE_ID    = 'roster-cal-v2'
 
 // ── CSS 注入（版本號防重複）─────────────────────
 function _injectStyles() {
+  document.getElementById('roster-cal-v1')?.remove()  // 清除舊版
   if (document.getElementById(STYLE_ID)) return
   const s = document.createElement('style')
   s.id = STYLE_ID
@@ -36,9 +37,11 @@ function _injectStyles() {
     }
     .cal-fn {
       font-size:9px; font-weight:700; line-height:1.3;
-      color:var(--color-primary,#60a5fa);
       text-align:center; word-break:keep-all;
     }
+    .cal-fn-future   { color:var(--color-primary,#60a5fa); }
+    .cal-fn-logged   { color:#4ade80; }
+    .cal-fn-unlogged { color:#fb923c; }
     .cal-dot {
       width:5px; height:5px; border-radius:50%;
       background:var(--color-primary,#60a5fa); margin-top:3px;
@@ -72,6 +75,12 @@ function blockStr(min) {
   if (!min) return ''
   return `${Math.floor(min/60)}h${String(min%60).padStart(2,'0')}m`
 }
+// "20260524" → "2026-05-24"
+function _dsToIso(ds) {
+  return `${ds.slice(0,4)}-${ds.slice(4,6)}-${ds.slice(6,8)}`
+}
+// "06:55" → "0655"  （add.js 的 std/sta 參數不含冒號）
+function _hhmm(s) { return (s || '').replace(':', '') }
 
 // ── Worker fetch ──────────────────────────────
 async function fetchRoster(employeeId, password) {
@@ -83,6 +92,39 @@ async function fetchRoster(employeeId, password) {
   const data = await resp.json()
   if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
   return data
+}
+
+// ── Logbook 連動：查詢過去航班是否已記錄 ─────
+// key: "YYYYMMDD_fnWithoutJX"  →  value: Firestore flightId
+let _loggedFlights = new Map()
+
+async function loadLoggedFlights(uid, pairings) {
+  const today = todayStr()
+  const past  = pairings.filter(p => p.date < today)
+  if (past.length === 0) { _loggedFlights = new Map(); return }
+
+  const dates  = past.map(p => p.date)
+  const minDs  = dates.reduce((a, b) => a < b ? a : b)
+  const maxDs  = dates.reduce((a, b) => a > b ? a : b)
+
+  try {
+    const q    = query(
+      collection(db(), 'users', uid, 'flights'),
+      where('date', '>=', _dsToIso(minDs)),
+      where('date', '<=', _dsToIso(maxDs))
+    )
+    const snap = await getDocs(q)
+    _loggedFlights = new Map()
+    for (const d of snap.docs) {
+      const f       = d.data()
+      const dateKey = (f.date || '').replace(/-/g, '')          // YYYY-MM-DD → YYYYMMDD
+      const fn      = (f.flightNumber || '').replace(/^JX/i, '') // 去 JX 前綴
+      if (dateKey && fn) _loggedFlights.set(`${dateKey}_${fn}`, d.id)
+    }
+  } catch (e) {
+    console.warn('[Roster] loadLoggedFlights failed:', e)
+    _loggedFlights = new Map()
+  }
 }
 
 // ── 月曆狀態 ──────────────────────────────────
@@ -98,65 +140,116 @@ function renderCalendar(scrollEl) {
   const year  = _calYear
   const month = _calMonth
 
-  const firstDow    = new Date(year, month, 1).getDay()   // 0=Sun
+  const firstDow    = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
 
-  // 日期格線
+  // ── 日期格線 ─────────────────────────────────
   let cells = ''
   for (let i = 0; i < firstDow; i++) cells += '<div></div>'
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const ds       = `${year}${String(month+1).padStart(2,'0')}${String(d).padStart(2,'0')}`
-    const ps       = _pairings.filter(p => p.date === ds)
-    const isToday  = ds === today
-    const isSel    = ds === _selected
-    const hasDuty  = ps.length > 0
-    const isPast   = ds < today && !isToday
+    const ds      = `${year}${String(month+1).padStart(2,'0')}${String(d).padStart(2,'0')}`
+    const ps      = _pairings.filter(p => p.date === ds)
+    const isToday = ds === today
+    const isSel   = ds === _selected
+    const hasDuty = ps.length > 0
+    const isPast  = ds < today   // 今天 ds===today 不滿足 < 所以 isPast=false
 
-    // 最多顯示 2 段航班號（去 JX 前綴）
-    const fns = hasDuty
-      ? ps.flatMap(p => p.legs.map(l => l.flightNumber.replace(/^JX/i, ''))).slice(0, 2)
-      : []
+    const allLegs = hasDuty ? ps.flatMap(p => p.legs) : []
+
+    // 每個腿的顏色：過去→看 _loggedFlights；今天/未來→藍色
+    let fnBadges = ''
+    if (hasDuty) {
+      for (const lg of allLegs.slice(0, 2)) {
+        const fn  = lg.flightNumber.replace(/^JX/i, '')
+        let cls = 'cal-fn-future'
+        if (isPast) {
+          cls = _loggedFlights.has(`${ds}_${fn}`) ? 'cal-fn-logged' : 'cal-fn-unlogged'
+        }
+        fnBadges += `<div class="cal-fn ${cls}">${fn}</div>`
+      }
+    }
 
     cells += `
       <div class="cal-day${isToday?' cal-today':''}${isSel?' cal-selected':''}${hasDuty?' cal-duty':''}"
            ${hasDuty ? `data-date="${ds}"` : ''}>
         <div class="cal-day-num" style="${isPast?'color:var(--color-text-tertiary)':''}">${d}</div>
-        ${fns.map(fn => `<div class="cal-fn">${fn}</div>`).join('')}
-        ${hasDuty && fns.length === 0 ? '<div class="cal-dot"></div>' : ''}
+        ${fnBadges}
+        ${hasDuty && allLegs.length === 0 ? '<div class="cal-dot"></div>' : ''}
       </div>`
   }
 
-  // 選取日詳情
+  // ── 選取日詳情面板 ─────────────────────────────
   let detailHtml = ''
   if (_selected) {
     const ps      = _pairings.filter(p => p.date === _selected)
     const isToday = _selected === today
+    const isPast  = _selected < today   // 今天不是 past
+
     if (ps.length > 0) {
       const p    = ps[0]
       const legs = p.legs || []
-      const rows = legs.map(lg => `
-        <div style="display:flex;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle)">
-          <div style="flex:1;min-width:0">
-            <span style="font-weight:700;font-size:15px">${lg.flightNumber}</span>
-            <span style="font-size:12px;color:var(--color-text-secondary);margin-left:8px">
-              ${lg.dep} → ${lg.dest}
-            </span>
-            <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">
-              ${lg.std_local}–${lg.sta_local}L
-              ${lg.blockTime ? `&nbsp;·&nbsp;${blockStr(lg.blockTime)}` : ''}
-            </div>
-          </div>
-          ${isToday ? `
-            <a href="${KB_URL}#roster?fn=${lg.flightNumber.replace(/^JX/i,'')}&date=${p.date}"
-               target="_blank"
-               class="btn btn-sm btn-primary"
-               style="flex-shrink:0;text-decoration:none;margin-left:8px;white-space:nowrap">
-              KneeBoard ✈
-            </a>` : ''}
-        </div>`).join('')
 
-      const selDateLabel = `${parseInt(_selected.slice(6,8))} ${MONTHS[parseInt(_selected.slice(4,6))-1]} ${_selected.slice(0,4)}`
+      const rows = legs.map(lg => {
+        const fn       = lg.flightNumber.replace(/^JX/i, '')
+        const key      = `${_selected}_${fn}`
+        const logged   = isPast && _loggedFlights.has(key)
+        const unlogged = isPast && !_loggedFlights.has(key)
+        const fId      = _loggedFlights.get(key)
+
+        // 補記 URL（預填 add wizard）
+        const addUrl = `add?fn=${lg.flightNumber}&date=${p.date}` +
+          `&from=${lg.dep}&to=${lg.dest}` +
+          `&std=${_hhmm(lg.std_local)}&sta=${_hhmm(lg.sta_local)}` +
+          `&block=${lg.blockTime || 0}`
+
+        return `
+          <div style="display:flex;align-items:flex-start;padding:9px 0;
+                      border-bottom:1px solid var(--border-subtle)">
+            <!-- 左側：航班資訊 -->
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-weight:700;font-size:15px">${lg.flightNumber}</span>
+                <span style="font-size:12px;color:var(--color-text-secondary)">${lg.dep} → ${lg.dest}</span>
+                ${logged   ? `<span style="font-size:10px;color:#4ade80;font-weight:700">✓ 已記錄</span>` : ''}
+                ${unlogged ? `<span style="font-size:10px;color:#fb923c;font-weight:700">⚠ 未記錄</span>` : ''}
+              </div>
+              <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">
+                ${lg.std_local}–${lg.sta_local}L
+                ${lg.blockTime ? `&nbsp;·&nbsp;${blockStr(lg.blockTime)}` : ''}
+              </div>
+            </div>
+            <!-- 右側：按鈕 -->
+            <div style="flex-shrink:0;margin-left:8px;display:flex;flex-direction:column;
+                        gap:4px;align-items:flex-end">
+              ${logged && fId ? `
+                <button class="btn btn-sm"
+                        data-navigate="detail/${fId}"
+                        style="white-space:nowrap;font-size:11px;
+                               color:#4ade80;border-color:#4ade80">
+                  查看記錄
+                </button>` : ''}
+              ${unlogged ? `
+                <button class="btn btn-sm btn-primary"
+                        data-navigate="${addUrl}"
+                        style="white-space:nowrap;font-size:11px;
+                               background:#fb923c;border-color:#fb923c">
+                  補記錄
+                </button>` : ''}
+              ${isToday ? `
+                <a href="${KB_URL}#roster?fn=${fn}&date=${p.date}"
+                   target="_blank"
+                   class="btn btn-sm btn-primary"
+                   style="text-decoration:none;white-space:nowrap">
+                  KneeBoard ✈
+                </a>` : ''}
+            </div>
+          </div>`
+      }).join('')
+
+      const selDateLabel =
+        `${parseInt(_selected.slice(6,8))} ${MONTHS[parseInt(_selected.slice(4,6))-1]} ${_selected.slice(0,4)}`
+      const isFuture = _selected > today
 
       detailHtml = `
         <div style="margin-top:12px;background:var(--bg-card,var(--color-surface));
@@ -169,7 +262,7 @@ function renderCalendar(scrollEl) {
               </div>` : ''}
           </div>
           ${rows || `<div style="font-size:13px;color:var(--color-text-secondary);padding:6px 0">無飛行任務</div>`}
-          ${!isToday && legs.length > 0 ? `
+          ${isFuture && legs.length > 0 ? `
             <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;
                         padding-top:8px">KneeBoard 僅執勤當天開放</div>` : ''}
         </div>`
@@ -210,7 +303,7 @@ function renderCalendar(scrollEl) {
 
     </div>`
 
-  // ── 事件 ─────────────────────
+  // ── 事件綁定 ─────────────────────────────────
   scrollEl.querySelector('#cal-prev').addEventListener('click', () => {
     _calMonth--
     if (_calMonth < 0) { _calMonth = 11; _calYear-- }
@@ -223,11 +316,16 @@ function renderCalendar(scrollEl) {
     _selected = null
     renderCalendar(scrollEl)
   })
+  // 日期格：點擊選取
   scrollEl.querySelectorAll('.cal-day[data-date]').forEach(cell => {
     cell.addEventListener('click', () => {
       _selected = _selected === cell.dataset.date ? null : cell.dataset.date
       renderCalendar(scrollEl)
     })
+  })
+  // 詳情按鈕：navigate（查看記錄 / 補記錄）
+  scrollEl.querySelectorAll('[data-navigate]').forEach(btn => {
+    btn.addEventListener('click', () => navigate(btn.dataset.navigate))
   })
 }
 
@@ -403,6 +501,9 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
     if (isReal) {
       _pairings = pairings
 
+      // 查詢 Logbook：過去航班是否已記錄
+      await loadLoggedFlights(uid, pairings)
+
       // 自動導航至最近有出勤的月份
       const today    = todayStr()
       const upcoming = pairings
@@ -420,6 +521,7 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
       _selected = pairings.some(p => p.date === today) ? today : null
 
       renderCalendar(scroll)
+
       const futureCount = pairings.filter(p => p.date >= today).length
       showToast(`✅ 班表已更新（${futureCount} 個出勤日）`)
 
@@ -438,7 +540,8 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
       showToast(`⚠ ${pairings._reason || '解析中'}`)
 
     } else {
-      _pairings = []
+      _pairings      = []
+      _loggedFlights = new Map()
       _calYear  = new Date().getFullYear()
       _calMonth = new Date().getMonth()
       renderCalendar(scroll)
