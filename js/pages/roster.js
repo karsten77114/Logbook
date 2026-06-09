@@ -103,23 +103,36 @@ function pairingCard(p) {
     </div>`
 }
 
-// ── Debug card (raw WS events) ────────────────
+// ── Debug card (WS message trace) ────────────────
 
-function debugCard(wsEvents) {
-  if (!wsEvents?.length) return ''
-  const rows = wsEvents.map(e =>
-    `<div style="margin-bottom:6px"><b style="color:#f59e0b">${e.event}</b><br>
-     <span style="font-size:10px;word-break:break-all">${JSON.stringify(e.data).slice(0,200)}</span></div>`
+function debugCard(wsResult) {
+  // 顯示收到的訊息名稱列表或錯誤資訊
+  const msgs   = wsResult?.debug_messages || wsResult?._raw_msg_names?.map(n => ({ name: n })) || []
+  const attrs  = wsResult?.debug_attrs
+  const reason = wsResult?.error || (wsResult?.timedOut ? '連線超時（12s）' : '')
+
+  if (!msgs.length && !attrs && !reason) return ''
+
+  const msgRows = msgs.map(m =>
+    `<div style="color:${m.error ? '#ef4444' : '#a3e635'}">${m.name || '?'}${m.error ? ` ⚠${JSON.stringify(m.error).slice(0,60)}` : ''}</div>`
   ).join('')
+
+  const attrsHtml = attrs
+    ? `<div style="margin-top:8px;font-size:10px;color:#f59e0b">
+         Attrs keys: ${JSON.stringify(Object.keys(attrs))}<br>
+         IntAttributes: ${JSON.stringify(attrs.IntAttributes||[]).slice(0,200)}
+       </div>`
+    : ''
+
   return `
-    <div class="card" style="margin-bottom:12px;border:1px solid #f59e0b22">
+    <div class="card" style="margin-bottom:12px;border:1px solid #f59e0b44">
       <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">
-        🔍 Debug — ${wsEvents.length} WS events received
+        🔍 Debug${reason ? ` — ${reason}` : ''}
       </div>
-      <div style="font-size:11px;color:var(--color-text-secondary);line-height:1.7">${rows}</div>
-      <div style="font-size:10px;color:var(--color-text-tertiary);margin-top:8px">
-        Event names above → update _parseRosterEvents() in worker.js once structure is known.
+      <div style="font-size:11px;color:var(--color-text-secondary);line-height:1.7;font-family:monospace">
+        ${msgRows || '<span style="color:#888">（無訊息）</span>'}
       </div>
+      ${attrsHtml}
     </div>`
 }
 
@@ -222,9 +235,10 @@ function renderLoginForm(scroll, uid, onSuccess) {
 
 // ── Roster content ────────────────────────────
 
-function renderRosterContent(scroll, wsResult, cachedPairings) {
-  const pairings = cachedPairings.filter(p => isFuture(p.date))
-    .sort((a, b) => a.date.localeCompare(b.date))
+function renderRosterContent(scroll, wsResult, pairings) {
+  const future = Array.isArray(pairings)
+    ? pairings.filter(p => isFuture(p.date)).sort((a, b) => a.date.localeCompare(b.date))
+    : []
 
   const staleHtml = wsResult?.stale
     ? `<div style="font-size:12px;color:#f59e0b;padding:8px 12px;background:rgba(245,158,11,.1);
@@ -232,17 +246,36 @@ function renderRosterContent(scroll, wsResult, cachedPairings) {
          ⚠ 離線快取（${(wsResult.cached_at||'').slice(0,16).replace('T',' ')} UTC）
        </div>` : ''
 
-  const dbgHtml  = wsResult?.debug ? debugCard(wsResult.ws_events) : ''
+  // 顯示 debug 資訊：structure 未知、超時、或 StaffId 解析失敗
+  const needDebug = wsResult && (
+    wsResult.debug_attrs || wsResult.timedOut ||
+    wsResult.error === 'staff_id_not_found' ||
+    wsResult.error === 'roster_not_received' ||
+    (wsResult._raw_msg_names && future.length === 0)
+  )
+  const dbgHtml  = needDebug ? debugCard(wsResult) : ''
 
-  const listHtml = pairings.length > 0
-    ? pairings.map(pairingCard).join('')
+  // pairings[0]._unknown_structure → Worker 收到班表但欄位格式未知
+  const unknownStructure = !Array.isArray(pairings) && pairings?._unknown_structure
+  const rawHtml = unknownStructure
+    ? `<div class="card" style="margin-bottom:12px;border:1px solid #ef444444">
+         <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:8px">⚠ 班表結構未知</div>
+         <div style="font-size:11px;color:var(--color-text-secondary);font-family:monospace;word-break:break-all">
+           Keys: ${JSON.stringify(pairings._unknown_structure)}<br>
+           ${JSON.stringify(pairings._raw || {}).slice(0, 400)}
+         </div>
+       </div>` : ''
+
+  const listHtml = future.length > 0
+    ? future.map(pairingCard).join('')
+    : unknownStructure ? ''
     : `<div class="empty-state">
          <div class="empty-state-icon">📅</div>
          <div class="empty-state-title">尚無班表資料</div>
          <div class="empty-state-sub">點擊右上角 ↻ 取得最新班表</div>
        </div>`
 
-  scroll.innerHTML = `<div style="padding:16px 16px 32px">${staleHtml}${dbgHtml}${listHtml}</div>`
+  scroll.innerHTML = `<div style="padding:16px 16px 32px">${staleHtml}${dbgHtml}${rawHtml}${listHtml}</div>`
 }
 
 // ── Main export ───────────────────────────────
@@ -303,18 +336,23 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
   try {
     const result = await fetchRoster(employeeId, password)
 
-    // Parse and cache pairings if properly structured
-    let pairings = []
-    if (result.pairings?.length > 0 && !result.pairings[0]._raw_event) {
-      pairings = result.pairings
+    // 判斷 pairings 格式
+    const pairings = result.pairings
+    const isRealPairings = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
+
+    if (isRealPairings) {
       showToast(`✅ 班表已更新（${pairings.length} 筆）`)
-    } else if (result.ws_events?.length > 0) {
-      showToast(`📡 收到 ${result.ws_events.length} 個 WS 事件`)
+    } else if (result.error === 'staff_id_not_found') {
+      showToast('⚠ StaffId 解析失敗（Debug 資訊已顯示）')
+    } else if (result.error === 'roster_not_received') {
+      showToast('⚠ 班表訊息未到達（超時）')
+    } else if (Array.isArray(pairings) && pairings.length === 0) {
+      showToast('📅 本月無班表')
     } else {
-      showToast('⚠ 未收到班表資料')
+      showToast('⚠ 班表結構未知（Debug 資訊已顯示）')
     }
 
-    renderRosterContent(scroll, result, pairings)
+    renderRosterContent(scroll, result, pairings ?? [])
   } catch (e) {
     if (e.status === 401) {
       await clearPegasysCreds(uid)
