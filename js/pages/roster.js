@@ -362,6 +362,7 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
     console.log('[ROSTER] ws_reason:', result._debug_ws_reason)
     console.log('[ROSTER] msgNames:', JSON.stringify(result.msgNames||[]))
     if (result._debug_activity_raw) console.log('[ROSTER] activity_raw:', result._debug_activity_raw)
+    console.log('[ROSTER] activity_msg:', result._debug_activity_msg)
     if (Array.isArray(result.pairings)) console.log('[ROSTER] pairings_count:', result.pairings.length, result.pairings[0])
     else console.log('[ROSTER] pairings_obj:', JSON.stringify(result.pairings).slice(0, 200))
 
