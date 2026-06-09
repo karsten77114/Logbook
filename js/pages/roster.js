@@ -42,6 +42,7 @@ function _injectStyles() {
     .cal-fn-future   { color:var(--color-primary,#60a5fa); }
     .cal-fn-logged   { color:#4ade80; }
     .cal-fn-unlogged { color:#fb923c; }
+    .cal-fn-old      { color:var(--color-text-tertiary); }
     .cal-dot {
       width:5px; height:5px; border-radius:50%;
       background:var(--color-primary,#60a5fa); margin-top:3px;
@@ -81,6 +82,11 @@ function _dsToIso(ds) {
 }
 // "06:55" → "0655"  （add.js 的 std/sta 參數不含冒號）
 function _hhmm(s) { return (s || '').replace(':', '') }
+// n 天前的 YYYYMMDD 字串
+function _daysAgo(n) {
+  const d = new Date(); d.setDate(d.getDate() - n)
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+}
 
 // ── Worker fetch ──────────────────────────────
 async function fetchRoster(employeeId, password) {
@@ -99,13 +105,22 @@ async function fetchRoster(employeeId, password) {
 let _loggedFlights = new Map()
 
 async function loadLoggedFlights(uid, pairings) {
-  const today = todayStr()
-  const past  = pairings.filter(p => p.date < today)
+  const today  = todayStr()
+  const cutoff = _daysAgo(PAST_DAYS_LIMIT)   // 90 天前，不追蹤更舊的
+
+  // 只查最近 90 天的過去出勤日
+  const past = pairings.filter(p => p.date < today && p.date >= cutoff)
   if (past.length === 0) { _loggedFlights = new Map(); return }
 
-  const dates  = past.map(p => p.date)
-  const minDs  = dates.reduce((a, b) => a < b ? a : b)
-  const maxDs  = dates.reduce((a, b) => a > b ? a : b)
+  // fingerprint：過去出勤日清單（歷史班表固定，可長效快取）
+  const sig = uid + ':' + past.map(p => p.date).sort().join(',')
+
+  // cache hit：同一批日期且距上次查詢 < 5 分鐘
+  if (sig === _loggedFlightsSig && Date.now() - _loggedFlightsTs < LOGGED_TTL_MS) return
+
+  const dates = past.map(p => p.date)
+  const minDs = dates.reduce((a, b) => a < b ? a : b)
+  const maxDs = dates.reduce((a, b) => a > b ? a : b)
 
   try {
     const q    = query(
@@ -117,10 +132,12 @@ async function loadLoggedFlights(uid, pairings) {
     _loggedFlights = new Map()
     for (const d of snap.docs) {
       const f       = d.data()
-      const dateKey = (f.date || '').replace(/-/g, '')          // YYYY-MM-DD → YYYYMMDD
+      const dateKey = (f.date || '').replace(/-/g, '')           // YYYY-MM-DD → YYYYMMDD
       const fn      = (f.flightNumber || '').replace(/^JX/i, '') // 去 JX 前綴
       if (dateKey && fn) _loggedFlights.set(`${dateKey}_${fn}`, d.id)
     }
+    _loggedFlightsSig = sig
+    _loggedFlightsTs  = Date.now()
   } catch (e) {
     console.warn('[Roster] loadLoggedFlights failed:', e)
     _loggedFlights = new Map()
@@ -132,6 +149,12 @@ let _calYear  = new Date().getFullYear()
 let _calMonth = new Date().getMonth()   // 0-indexed
 let _pairings = []
 let _selected = null                    // 'YYYYMMDD'
+
+// ── loadLoggedFlights 快取狀態 ────────────────
+let _loggedFlightsTs  = 0     // 上次查詢時間（ms）
+let _loggedFlightsSig = ''    // 過去出勤日 fingerprint
+const LOGGED_TTL_MS   = 5 * 60 * 1000   // 5 分鐘 TTL
+const PAST_DAYS_LIMIT = 90              // 只追蹤最近 90 天
 
 // ── 月曆渲染 ──────────────────────────────────
 function renderCalendar(scrollEl) {
@@ -157,14 +180,19 @@ function renderCalendar(scrollEl) {
 
     const allLegs = hasDuty ? ps.flatMap(p => p.legs) : []
 
-    // 每個腿的顏色：過去→看 _loggedFlights；今天/未來→藍色
+    // 每個腿的顏色：過去→看 _loggedFlights；今天/未來→藍色；90 天外→灰色不追蹤
+    const cutoff = _daysAgo(PAST_DAYS_LIMIT)
     let fnBadges = ''
     if (hasDuty) {
       for (const lg of allLegs.slice(0, 2)) {
         const fn  = lg.flightNumber.replace(/^JX/i, '')
         let cls = 'cal-fn-future'
         if (isPast) {
-          cls = _loggedFlights.has(`${ds}_${fn}`) ? 'cal-fn-logged' : 'cal-fn-unlogged'
+          if (ds < cutoff) {
+            cls = 'cal-fn-old'   // 超過 90 天，不追蹤
+          } else {
+            cls = _loggedFlights.has(`${ds}_${fn}`) ? 'cal-fn-logged' : 'cal-fn-unlogged'
+          }
         }
         fnBadges += `<div class="cal-fn ${cls}">${fn}</div>`
       }
@@ -190,11 +218,13 @@ function renderCalendar(scrollEl) {
       const p    = ps[0]
       const legs = p.legs || []
 
+      const cutoff = _daysAgo(PAST_DAYS_LIMIT)
       const rows = legs.map(lg => {
         const fn       = lg.flightNumber.replace(/^JX/i, '')
         const key      = `${_selected}_${fn}`
-        const logged   = isPast && _loggedFlights.has(key)
-        const unlogged = isPast && !_loggedFlights.has(key)
+        const inWindow = isPast && _selected >= cutoff   // 90 天內才追蹤
+        const logged   = inWindow && _loggedFlights.has(key)
+        const unlogged = inWindow && !_loggedFlights.has(key)
         const fId      = _loggedFlights.get(key)
 
         // 補記 URL（預填 add wizard）
