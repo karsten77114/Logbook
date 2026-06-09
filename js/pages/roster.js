@@ -266,20 +266,24 @@ function renderRosterContent(scroll, wsResult, pairings) {
   )
   const dbgHtml  = needDebug ? debugCard(wsResult) : ''
 
-  // pairings[0]._unknown_structure → Worker 收到班表但欄位格式未知
-  const unknownStructure = !Array.isArray(pairings) && pairings?._unknown_structure
-  const rawHtml = unknownStructure
-    ? `<div class="card" style="margin-bottom:12px;border:1px solid #ef444444">
-         <div style="font-size:12px;font-weight:700;color:#ef4444;margin-bottom:8px">⚠ 班表結構未知</div>
-         <div style="font-size:11px;color:var(--color-text-secondary);font-family:monospace;word-break:break-all">
-           Keys: ${JSON.stringify(pairings._unknown_structure)}<br>
-           ${JSON.stringify(pairings._raw || {}).slice(0, 400)}
+  // _debug → Worker 收到資料但解析中 / 結構待確認
+  const isDebugObj = !Array.isArray(pairings) && pairings?._debug === true
+  const rawHtml = isDebugObj
+    ? `<div class="card" style="margin-bottom:12px;border:1px solid #f59e0b44">
+         <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">
+           🔍 Debug — ${pairings._reason || '解析中'}
+         </div>
+         <div style="font-size:11px;color:var(--color-text-secondary);font-family:monospace;word-break:break-all;line-height:1.6">
+           allocations: ${pairings.alloc_count ?? '?'} | activities: ${pairings.activity_count ?? '?'}<br>
+           ${pairings.staff ? `staff: ${JSON.stringify(pairings.staff)}<br>` : ''}
+           ${pairings.sample_alloc ? `<b>sample_alloc:</b> ${pairings.sample_alloc.slice(0,400)}<br>` : ''}
+           ${pairings.sample_activity ? `<b>sample_activity:</b> ${pairings.sample_activity.slice(0,400)}` : ''}
          </div>
        </div>` : ''
 
   const listHtml = future.length > 0
     ? future.map(pairingCard).join('')
-    : unknownStructure ? ''
+    : isDebugObj ? ''
     : `<div class="empty-state">
          <div class="empty-state-icon">📅</div>
          <div class="empty-state-title">尚無班表資料</div>
@@ -349,14 +353,14 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
 
     // 判斷 pairings 格式
     const pairings = result.pairings
+    const isDebug  = pairings?._debug === true
     const isRealPairings = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
 
     if (isRealPairings) {
-      showToast(`✅ 班表已更新（${pairings.length} 筆）`)
-    } else if (result.error === 'staff_id_not_found') {
-      showToast('⚠ StaffId 解析失敗（Debug 資訊已顯示）')
-    } else if (result.error === 'roster_not_received') {
-      showToast('⚠ 班表訊息未到達（超時）')
+      const futureCount = pairings.filter(p => isFuture(p.date)).length
+      showToast(`✅ 班表已更新（${futureCount} 筆即將到來）`)
+    } else if (isDebug) {
+      showToast(`⚠ ${pairings._reason || '解析中'}（Debug 資訊已顯示）`)
     } else if (Array.isArray(pairings) && pairings.length === 0) {
       showToast('📅 本月無班表')
     } else {
