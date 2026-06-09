@@ -234,8 +234,10 @@ function renderCalendar(scrollEl) {
           `&block=${lg.blockTime || 0}`
 
         return `
-          <div style="display:flex;align-items:flex-start;padding:9px 0;
-                      border-bottom:1px solid var(--border-subtle)">
+          <div ${logged && fId ? `data-navigate="detail/${fId}"` : ''}
+               style="display:flex;align-items:center;padding:9px 0;
+                      border-bottom:1px solid var(--border-subtle);
+                      ${logged && fId ? 'cursor:pointer;' : ''}">
             <!-- 左側：航班資訊 -->
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -249,16 +251,8 @@ function renderCalendar(scrollEl) {
                 ${lg.blockTime ? `&nbsp;·&nbsp;${blockStr(lg.blockTime)}` : ''}
               </div>
             </div>
-            <!-- 右側：按鈕 -->
-            <div style="flex-shrink:0;margin-left:8px;display:flex;flex-direction:column;
-                        gap:4px;align-items:flex-end">
-              ${logged && fId ? `
-                <button class="btn btn-sm"
-                        data-navigate="detail/${fId}"
-                        style="white-space:nowrap;font-size:11px;
-                               color:#4ade80;border-color:#4ade80">
-                  查看記錄
-                </button>` : ''}
+            <!-- 右側 -->
+            <div style="flex-shrink:0;margin-left:8px;display:flex;align-items:center;gap:6px">
               ${unlogged ? `
                 <button class="btn btn-sm btn-primary"
                         data-navigate="${addUrl}"
@@ -273,6 +267,7 @@ function renderCalendar(scrollEl) {
                    style="text-decoration:none;white-space:nowrap">
                   KneeBoard ✈
                 </a>` : ''}
+              ${logged && fId ? `<span style="color:var(--color-text-tertiary);font-size:18px;line-height:1">›</span>` : ''}
             </div>
           </div>`
       }).join('')
