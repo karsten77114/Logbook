@@ -117,10 +117,16 @@ function debugCard(wsResult) {
     `<div style="color:${m.error ? '#ef4444' : '#a3e635'}">${m.name || '?'}${m.error ? ` ⚠${JSON.stringify(m.error).slice(0,60)}` : ''}</div>`
   ).join('')
 
-  const attrsHtml = attrs
-    ? `<div style="margin-top:8px;font-size:10px;color:#f59e0b">
-         Attrs keys: ${JSON.stringify(Object.keys(attrs))}<br>
-         IntAttributes: ${JSON.stringify(attrs.IntAttributes||[]).slice(0,200)}
+  const loginKeys = wsResult?.debug_login_keys
+  const loginMsg  = wsResult?.debug_login_msg
+  const attrsHtml = (attrs || loginKeys || loginMsg)
+    ? `<div style="margin-top:8px;font-size:10px;color:#f59e0b;word-break:break-all;line-height:1.6">
+         ${loginKeys ? `<b>RpyLogin keys:</b> ${JSON.stringify(loginKeys)}<br>` : ''}
+         ${attrs ? `<b>Attrs:</b> ${JSON.stringify(Object.keys(attrs))}<br>
+         Bool: ${JSON.stringify(attrs.BoolAttributes||[]).slice(0,200)}<br>
+         Int: ${JSON.stringify(attrs.IntAttributes||[]).slice(0,200)}<br>
+         Str: ${JSON.stringify(attrs.StringAttributes||[]).slice(0,200)}<br>` : ''}
+         ${loginMsg ? `<b>Full msg:</b> ${loginMsg.slice(0,500)}` : ''}
        </div>`
     : ''
 
