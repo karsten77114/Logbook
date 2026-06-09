@@ -95,11 +95,18 @@ function pairingCard(p) {
       </div>
     </div>`).join('')
 
+  const rawCodesHtml = (p.legs || []).length === 0 && (p.rawCodes || []).length > 0
+    ? `<div style="font-size:11px;color:var(--color-text-tertiary);padding:6px 0;font-family:monospace">
+         ${p.rawCodes.join('<br>')}
+       </div>`
+    : ''
+
   return `
     <div class="card" style="margin-bottom:12px">
       <div style="font-weight:700;font-size:14px;margin-bottom:4px">${dateLabel}</div>
       ${p.reportTime ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px">Report ${p.reportAirport} ${p.reportTime}L</div>` : ''}
       ${legs}
+      ${rawCodesHtml}
     </div>`
 }
 
