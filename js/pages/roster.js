@@ -126,7 +126,8 @@ function debugCard(wsResult) {
          Bool: ${JSON.stringify(attrs.BoolAttributes||[]).slice(0,200)}<br>
          Int: ${JSON.stringify(attrs.IntAttributes||[]).slice(0,200)}<br>
          Str: ${JSON.stringify(attrs.StringAttributes||[]).slice(0,200)}<br>` : ''}
-         ${loginMsg ? `<b>Full msg:</b> ${loginMsg.slice(0,500)}` : ''}
+         ${loginMsg ? `<b>Full msg:</b> ${loginMsg.slice(0,500)}<br>` : ''}
+         ${wsResult?.debug_jwt_claims ? `<b>JWT claims:</b> ${wsResult.debug_jwt_claims}` : ''}
        </div>`
     : ''
 
