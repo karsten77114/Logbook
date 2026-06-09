@@ -6,7 +6,8 @@ import { addFlight, saveCrew,
          getFlightsByDate }        from '../db.js'
 import { state, setCustomAircraft } from '../state.js'
 import { navigate, showToast }     from '../app.js'
-import { invalidateStats }         from './list.js'
+import { invalidateStats }                from './list.js'
+import { backgroundFetchAndSaveTrack }   from './detail.js'
 import { diffMin, normalizeHm,
          isValidHm, todayUTC }     from '../utils/time.js'
 import { calcNightTime }           from '../utils/nighttime.js'
@@ -465,8 +466,10 @@ async function saveFlight(root, form, crewSlots, btn) {
       }
     }
 
-    await addFlight(state.user.uid, form)
+    const flightId = await addFlight(state.user.uid, form)
     invalidateStats()
+    // 背景抓取 ADS-B track，不等結果、不阻擋 UI
+    backgroundFetchAndSaveTrack(state.user.uid, flightId, form).catch(() => {})
     showToast('✓ Saved', 'success')
     navigate('list')
   } catch (e) {

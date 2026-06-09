@@ -617,6 +617,56 @@ async function autoDetectRunway(root, track, destIata, flightId) {
   }
 }
 
+// ── Background Track Fetch (callable from add.js) ─────────────────
+/**
+ * 儲存航班後在背景自動抓取 ADS-B track 並存回 Firestore。
+ * 不需要 DOM，fire-and-forget 用（catch 在呼叫方處理）。
+ */
+export async function backgroundFetchAndSaveTrack(uid, flightId, f) {
+  if (!f.offTime || !f.onTime) return
+  // Ground op：沒有飛行時間，跳過
+  if (f.flightTime === 0 && f.offTime === '00:00' && f.onTime === '00:00') return
+
+  const icao24 = (f.icao24 || FLEET[f.registration]?.icao24 || '').trim().toLowerCase()
+  const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
+  const tooOld = (Date.now() / 1000 - begin) > 30 * 86400
+
+  let track = null
+
+  // Strategy 1: OpenSky（ICAO24 已知）
+  if (icao24 && !tooOld) track = await fetchTrack(icao24, midpoint)
+
+  // Strategy 1b: hexdb.io → ICAO24 → OpenSky
+  if (!track?.length && !icao24 && f.registration && !tooOld) {
+    try {
+      const r = await fetch(
+        `https://hexdb.io/reg-hex?reg=${encodeURIComponent(f.registration)}`,
+        { signal: AbortSignal.timeout(8000) }
+      )
+      if (r.ok) {
+        const hex = (await r.text()).trim().toLowerCase()
+        if (/^[0-9a-f]{6}$/.test(hex)) track = await fetchTrack(hex, midpoint)
+      }
+    } catch (_) {}
+  }
+
+  // Strategy 2: FR24 via Worker proxy
+  if (!track?.length && f.registration && f.date) {
+    track = await fetchTrackFR24(f.registration, f.date, f.from, f.to, f.flightNumber)
+  }
+
+  if (!track?.length) return
+
+  // 存 track
+  await updateFlight(uid, flightId, { flightTrack: track })
+
+  // 自動偵測跑道
+  const runway = detectRunway(track, f.to)
+  if (runway && !f.runway) {
+    await updateFlight(uid, flightId, { runway })
+  }
+}
+
 // ── Edit Sheet ─────────────────────────────────
 
 function _minHm(min) {
