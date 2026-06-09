@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════
-// Roster Page — PegaSys 班表整合
+// Roster Page — PegaSys 月曆版 (v50)
 // ══════════════════════════════════════════════
 import { getDoc, setDoc, doc }  from 'firebase/firestore'
 import { getFirestore }          from 'firebase/firestore'
@@ -7,12 +7,47 @@ import { getFirebaseApp }        from '../auth.js'
 import { state }                 from '../state.js'
 import { navigate, showToast }   from '../app.js'
 
-const WORKER_URL    = 'https://jx-briefing.karsten77114.workers.dev'
-const KB_URL        = 'https://karsten77114.github.io/Kneeboard/'
-const MONTHS        = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
+const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
+const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
+const WDAYS       = ['日','一','二','三','四','五','六']
+const STYLE_ID    = 'roster-cal-v1'
+
+// ── CSS 注入（版本號防重複）─────────────────────
+function _injectStyles() {
+  if (document.getElementById(STYLE_ID)) return
+  const s = document.createElement('style')
+  s.id = STYLE_ID
+  s.textContent = `
+    .cal-day {
+      display:flex; flex-direction:column; align-items:center;
+      padding:3px 1px; min-height:50px; border-radius:7px;
+      box-sizing:border-box;
+    }
+    .cal-day.cal-duty { cursor:pointer; }
+    .cal-day.cal-selected { background:rgba(255,255,255,.1); }
+    .cal-day-num {
+      font-size:14px; line-height:26px; width:26px; height:26px;
+      text-align:center; border-radius:50%; flex-shrink:0;
+    }
+    .cal-today .cal-day-num {
+      background:var(--color-primary,#60a5fa);
+      color:#000; font-weight:700;
+    }
+    .cal-fn {
+      font-size:9px; font-weight:700; line-height:1.3;
+      color:var(--color-primary,#60a5fa);
+      text-align:center; word-break:keep-all;
+    }
+    .cal-dot {
+      width:5px; height:5px; border-radius:50%;
+      background:var(--color-primary,#60a5fa); margin-top:3px;
+    }
+  `
+  document.head.appendChild(s)
+}
 
 // ── Firestore helpers ─────────────────────────
-
 function db() { return getFirestore(getFirebaseApp()) }
 
 async function getPegasysCreds(uid) {
@@ -21,39 +56,24 @@ async function getPegasysCreds(uid) {
     return snap.exists() ? snap.data() : null
   } catch { return null }
 }
-
 async function savePegasysCreds(uid, employeeId, password) {
   await setDoc(doc(db(), 'users', uid, 'meta', 'pegasys'), { employeeId, password }, { merge: true })
 }
-
 async function clearPegasysCreds(uid) {
   await setDoc(doc(db(), 'users', uid, 'meta', 'pegasys'), { employeeId: null, password: null })
 }
 
 // ── Helpers ───────────────────────────────────
-
-function formatDate(d) {
-  const m = parseInt(d.slice(4, 6), 10)
-  return `${d.slice(6, 8)} ${MONTHS[m - 1]} ${d.slice(0, 4)}`
-}
-
-function isToday(d) {
+function todayStr() {
   const n = new Date()
-  return d === `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`
+  return `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`
 }
-
-function isFuture(d) {
-  const n = new Date()
-  const t = `${n.getFullYear()}${String(n.getMonth()+1).padStart(2,'0')}${String(n.getDate()).padStart(2,'0')}`
-  return d >= t
-}
-
 function blockStr(min) {
+  if (!min) return ''
   return `${Math.floor(min/60)}h${String(min%60).padStart(2,'0')}m`
 }
 
 // ── Worker fetch ──────────────────────────────
-
 async function fetchRoster(employeeId, password) {
   const resp = await fetch(`${WORKER_URL}/pegasys/roster`, {
     method: 'POST',
@@ -65,97 +85,153 @@ async function fetchRoster(employeeId, password) {
   return data
 }
 
-// ── Pairing card ──────────────────────────────
+// ── 月曆狀態 ──────────────────────────────────
+let _calYear  = new Date().getFullYear()
+let _calMonth = new Date().getMonth()   // 0-indexed
+let _pairings = []
+let _selected = null                    // 'YYYYMMDD'
 
-function pairingCard(p) {
-  const dateLabel = formatDate(p.date) + (isToday(p.date) ? ' — Today' : '')
+// ── 月曆渲染 ──────────────────────────────────
+function renderCalendar(scrollEl) {
+  _injectStyles()
+  const today = todayStr()
+  const year  = _calYear
+  const month = _calMonth
 
-  const legs = (p.legs || []).map(lg => `
-    <div style="padding:10px 0;border-bottom:1px solid var(--border-subtle)">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div style="min-width:0">
-          <div style="font-weight:700;font-size:15px">${lg.flightNumber}</div>
-          <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">
-            ${lg.dep} → ${lg.dest}
-            &nbsp;·&nbsp;
-            ${lg.std_local}–${lg.sta_local}L
-            &nbsp;·&nbsp;
-            ${blockStr(lg.blockTime)}
+  const firstDow    = new Date(year, month, 1).getDay()   // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  // 日期格線
+  let cells = ''
+  for (let i = 0; i < firstDow; i++) cells += '<div></div>'
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds       = `${year}${String(month+1).padStart(2,'0')}${String(d).padStart(2,'0')}`
+    const ps       = _pairings.filter(p => p.date === ds)
+    const isToday  = ds === today
+    const isSel    = ds === _selected
+    const hasDuty  = ps.length > 0
+    const isPast   = ds < today && !isToday
+
+    // 最多顯示 2 段航班號（去 JX 前綴）
+    const fns = hasDuty
+      ? ps.flatMap(p => p.legs.map(l => l.flightNumber.replace(/^JX/i, ''))).slice(0, 2)
+      : []
+
+    cells += `
+      <div class="cal-day${isToday?' cal-today':''}${isSel?' cal-selected':''}${hasDuty?' cal-duty':''}"
+           ${hasDuty ? `data-date="${ds}"` : ''}>
+        <div class="cal-day-num" style="${isPast?'color:var(--color-text-tertiary)':''}">${d}</div>
+        ${fns.map(fn => `<div class="cal-fn">${fn}</div>`).join('')}
+        ${hasDuty && fns.length === 0 ? '<div class="cal-dot"></div>' : ''}
+      </div>`
+  }
+
+  // 選取日詳情
+  let detailHtml = ''
+  if (_selected) {
+    const ps      = _pairings.filter(p => p.date === _selected)
+    const isToday = _selected === today
+    if (ps.length > 0) {
+      const p    = ps[0]
+      const legs = p.legs || []
+      const rows = legs.map(lg => `
+        <div style="display:flex;align-items:center;padding:9px 0;border-bottom:1px solid var(--border-subtle)">
+          <div style="flex:1;min-width:0">
+            <span style="font-weight:700;font-size:15px">${lg.flightNumber}</span>
+            <span style="font-size:12px;color:var(--color-text-secondary);margin-left:8px">
+              ${lg.dep} → ${lg.dest}
+            </span>
+            <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">
+              ${lg.std_local}–${lg.sta_local}L
+              ${lg.blockTime ? `&nbsp;·&nbsp;${blockStr(lg.blockTime)}` : ''}
+            </div>
           </div>
-          <div style="font-size:11px;color:var(--color-text-tertiary);margin-top:1px">
-            STD ${lg.std_utc}Z · STA ${lg.sta_utc}Z
+          ${isToday ? `
+            <a href="${KB_URL}#roster?fn=${lg.flightNumber.replace(/^JX/i,'')}&date=${p.date}"
+               target="_blank"
+               class="btn btn-sm btn-primary"
+               style="flex-shrink:0;text-decoration:none;margin-left:8px;white-space:nowrap">
+              KneeBoard ✈
+            </a>` : ''}
+        </div>`).join('')
+
+      const selDateLabel = `${parseInt(_selected.slice(6,8))} ${MONTHS[parseInt(_selected.slice(4,6))-1]} ${_selected.slice(0,4)}`
+
+      detailHtml = `
+        <div style="margin-top:12px;background:var(--bg-card,var(--color-surface));
+                    border-radius:12px;padding:10px 14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+            <div style="font-weight:700;font-size:14px">${selDateLabel}</div>
+            ${p.reportTime ? `
+              <div style="font-size:12px;color:var(--color-text-secondary)">
+                報到 ${p.reportAirport} ${p.reportTime}L
+              </div>` : ''}
           </div>
+          ${rows || `<div style="font-size:13px;color:var(--color-text-secondary);padding:6px 0">無飛行任務</div>`}
+          ${!isToday && legs.length > 0 ? `
+            <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;
+                        padding-top:8px">KneeBoard 僅執勤當天開放</div>` : ''}
+        </div>`
+    }
+  }
+
+  scrollEl.innerHTML = `
+    <div style="padding:8px 12px 40px">
+
+      <!-- 月份導航 -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button id="cal-prev"
+          style="background:none;border:none;color:var(--color-primary);
+                 font-size:26px;padding:2px 10px;cursor:pointer;line-height:1">‹</button>
+        <div style="font-weight:700;font-size:17px;letter-spacing:.5px">
+          ${MONTHS[month]} ${year}
         </div>
-        <a href="${KB_URL}#roster?fn=${lg.flightNumber.replace(/^JX/i,'')}&date=${p.date}"
-           target="_blank"
-           class="btn btn-sm btn-secondary"
-           style="white-space:nowrap;flex-shrink:0;text-decoration:none">
-          KneeBoard ✈
-        </a>
+        <button id="cal-next"
+          style="background:none;border:none;color:var(--color-primary);
+                 font-size:26px;padding:2px 10px;cursor:pointer;line-height:1">›</button>
       </div>
-    </div>`).join('')
 
-  const rawCodesHtml = (p.legs || []).length === 0 && (p.rawCodes || []).length > 0
-    ? `<div style="font-size:11px;color:var(--color-text-tertiary);padding:6px 0;font-family:monospace">
-         ${p.rawCodes.join('<br>')}
-       </div>`
-    : ''
-
-  return `
-    <div class="card" style="margin-bottom:12px">
-      <div style="font-weight:700;font-size:14px;margin-bottom:4px">${dateLabel}</div>
-      ${p.reportTime ? `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px">Report ${p.reportAirport} ${p.reportTime}L</div>` : ''}
-      ${legs}
-      ${rawCodesHtml}
-    </div>`
-}
-
-// ── Debug card (WS message trace) ────────────────
-
-function debugCard(wsResult) {
-  // 顯示收到的訊息名稱列表或錯誤資訊
-  const msgs   = wsResult?.debug_messages || wsResult?._raw_msg_names?.map(n => ({ name: n })) || []
-  const attrs  = wsResult?.debug_attrs
-  const reason = wsResult?.error || (wsResult?.timedOut ? '連線超時（12s）' : '')
-
-  if (!msgs.length && !attrs && !reason) return ''
-
-  const msgRows = msgs.map(m =>
-    `<div style="color:${m.error ? '#ef4444' : '#a3e635'};margin-bottom:4px">
-      ${m.name || '?'}${m.error ? ` ⚠${JSON.stringify(m.error).slice(0,60)}` : ''}
-      ${m._keys ? `<br><span style="color:#888;font-size:10px">keys:${JSON.stringify(m._keys)}</span>` : ''}
-      ${m._preview ? `<br><span style="color:#aaa;font-size:10px;word-break:break-all">${m._preview.slice(0,300)}</span>` : ''}
-    </div>`
-  ).join('')
-
-  const loginKeys = wsResult?.debug_login_keys
-  const loginMsg  = wsResult?.debug_login_msg
-  const attrsHtml = (attrs || loginKeys || loginMsg)
-    ? `<div style="margin-top:8px;font-size:10px;color:#f59e0b;word-break:break-all;line-height:1.6">
-         ${loginKeys ? `<b>RpyLogin keys:</b> ${JSON.stringify(loginKeys)}<br>` : ''}
-         ${attrs ? `<b>Attrs:</b> ${JSON.stringify(Object.keys(attrs))}<br>
-         Bool: ${JSON.stringify(attrs.BoolAttributes||[]).slice(0,200)}<br>
-         Int: ${JSON.stringify(attrs.IntAttributes||[]).slice(0,200)}<br>
-         Str: ${JSON.stringify(attrs.StringAttributes||[]).slice(0,200)}<br>` : ''}
-         ${loginMsg ? `<b>Full msg:</b> ${loginMsg.slice(0,500)}<br>` : ''}
-         ${wsResult?.debug_jwt_claims ? `<b>JWT claims:</b> ${wsResult.debug_jwt_claims}` : ''}
-       </div>`
-    : ''
-
-  return `
-    <div class="card" style="margin-bottom:12px;border:1px solid #f59e0b44">
-      <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">
-        🔍 Debug${reason ? ` — ${reason}` : ''}
+      <!-- 星期標頭 -->
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px">
+        ${WDAYS.map((w,i) => `
+          <div style="text-align:center;font-size:11px;padding:2px 0;
+               color:${i===0?'#ef4444':i===6?'#60a5fa':'var(--color-text-secondary)'}">
+            ${w}</div>`).join('')}
       </div>
-      <div style="font-size:11px;color:var(--color-text-secondary);line-height:1.7;font-family:monospace">
-        ${msgRows || '<span style="color:#888">（無訊息）</span>'}
+
+      <!-- 日期格線 -->
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">
+        ${cells}
       </div>
-      ${attrsHtml}
+
+      <!-- 詳情面板 -->
+      <div id="cal-detail">${detailHtml}</div>
+
     </div>`
+
+  // ── 事件 ─────────────────────
+  scrollEl.querySelector('#cal-prev').addEventListener('click', () => {
+    _calMonth--
+    if (_calMonth < 0) { _calMonth = 11; _calYear-- }
+    _selected = null
+    renderCalendar(scrollEl)
+  })
+  scrollEl.querySelector('#cal-next').addEventListener('click', () => {
+    _calMonth++
+    if (_calMonth > 11) { _calMonth = 0; _calYear++ }
+    _selected = null
+    renderCalendar(scrollEl)
+  })
+  scrollEl.querySelectorAll('.cal-day[data-date]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      _selected = _selected === cell.dataset.date ? null : cell.dataset.date
+      renderCalendar(scrollEl)
+    })
+  })
 }
 
 // ── Bottom nav ────────────────────────────────
-
 function bottomNav() {
   const items = [
     { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
@@ -173,15 +249,15 @@ function bottomNav() {
     </nav>`
 }
 
-// ── Login form ────────────────────────────────
-
+// ── 登入表單 ──────────────────────────────────
 function renderLoginForm(scroll, uid, onSuccess) {
   scroll.innerHTML = `
     <div style="padding:16px 16px 32px">
       <div class="card">
         <div style="font-weight:700;font-size:16px;margin-bottom:4px">PegaSys 登入</div>
         <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:20px;line-height:1.5">
-          帳密加密後存於 Firestore，跨裝置共用。
+          帳密加密後存於 Firestore，跨裝置共用。<br>
+          公司強制更新密碼後請重新輸入。
         </div>
         <div style="margin-bottom:14px">
           <label style="display:block;font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">員工編號</label>
@@ -206,9 +282,9 @@ function renderLoginForm(scroll, uid, onSuccess) {
       </div>
     </div>`
 
-  const uidInp  = scroll.querySelector('#pg-uid')
-  const pwInp   = scroll.querySelector('#pg-pw')
-  const errEl   = scroll.querySelector('#pg-err')
+  const uidInp   = scroll.querySelector('#pg-uid')
+  const pwInp    = scroll.querySelector('#pg-pw')
+  const errEl    = scroll.querySelector('#pg-err')
   const loginBtn = scroll.querySelector('#pg-login-btn')
 
   const doLogin = async () => {
@@ -251,69 +327,23 @@ function renderLoginForm(scroll, uid, onSuccess) {
   uidInp.addEventListener('keydown', e => { if (e.key === 'Enter') pwInp.focus() })
 }
 
-// ── Roster content ────────────────────────────
-
-function renderRosterContent(scroll, wsResult, pairings) {
-  const future = Array.isArray(pairings)
-    ? pairings.filter(p => isFuture(p.date)).sort((a, b) => a.date.localeCompare(b.date))
-    : []
-
-  const staleHtml = wsResult?.stale
-    ? `<div style="font-size:12px;color:#f59e0b;padding:8px 12px;background:rgba(245,158,11,.1);
-                   border-radius:8px;margin-bottom:12px">
-         ⚠ 離線快取（${(wsResult.cached_at||'').slice(0,16).replace('T',' ')} UTC）
-       </div>` : ''
-
-  // 顯示 debug 資訊：structure 未知、超時、或 StaffId 解析失敗
-  const needDebug = wsResult && (
-    wsResult.debug_attrs || wsResult.timedOut ||
-    wsResult.error === 'staff_id_not_found' ||
-    wsResult.error === 'roster_not_received' ||
-    (wsResult._raw_msg_names && future.length === 0)
-  )
-  const dbgHtml  = needDebug ? debugCard(wsResult) : ''
-
-  // _debug → Worker 收到資料但解析中 / 結構待確認
-  const isDebugObj = !Array.isArray(pairings) && pairings?._debug === true
-  const rawHtml = isDebugObj
-    ? `<div class="card" style="margin-bottom:12px;border:1px solid #f59e0b44">
-         <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:8px">
-           🔍 Debug — ${pairings._reason || '解析中'}
-         </div>
-         <div style="font-size:11px;color:var(--color-text-secondary);font-family:monospace;word-break:break-all;line-height:1.6">
-           allocations: ${pairings.alloc_count ?? '?'} | activities: ${pairings.activity_count ?? '?'}<br>
-           ${pairings.staff ? `staff: ${JSON.stringify(pairings.staff)}<br>` : ''}
-           ${pairings.sample_alloc ? `<b>sample_alloc:</b> ${pairings.sample_alloc.slice(0,400)}<br>` : ''}
-           ${pairings.sample_activity ? `<b>sample_activity:</b> ${pairings.sample_activity.slice(0,400)}` : ''}
-         </div>
-       </div>` : ''
-
-  const listHtml = future.length > 0
-    ? future.map(pairingCard).join('')
-    : isDebugObj ? ''
-    : `<div class="empty-state">
-         <div class="empty-state-icon">📅</div>
-         <div class="empty-state-title">尚無班表資料</div>
-         <div class="empty-state-sub">點擊右上角 ↻ 取得最新班表</div>
-       </div>`
-
-  scroll.innerHTML = `<div style="padding:16px 16px 32px">${staleHtml}${dbgHtml}${rawHtml}${listHtml}</div>`
-}
-
 // ── Main export ───────────────────────────────
-
 export async function renderRoster(root) {
   const uid = state.user?.uid
   if (!uid) { navigate('login'); return }
 
-  // Build shell
   root.innerHTML = `
     <div class="page">
       <div class="topbar">
-        <div style="width:44px"></div>
+        <button id="cred-btn"
+          style="width:44px;background:none;border:none;cursor:pointer;padding:0;
+                 font-size:11px;color:var(--color-text-tertiary);line-height:1.2">
+          帳密<br>設定
+        </button>
         <div class="topbar-title" style="text-align:center">Roster</div>
-        <button id="roster-refresh" style="width:44px;background:none;border:none;
-                color:var(--color-primary);font-size:18px;cursor:pointer;padding:0">↻</button>
+        <button id="roster-refresh"
+          style="width:44px;background:none;border:none;
+                 color:var(--color-primary);font-size:18px;cursor:pointer;padding:0">↻</button>
       </div>
       <div class="scroll" id="roster-scroll" style="padding-top:0"></div>
       ${bottomNav()}
@@ -323,10 +353,19 @@ export async function renderRoster(root) {
     btn.addEventListener('click', () => navigate(btn.dataset.nav))
   )
 
-  const scroll = root.querySelector('#roster-scroll')
+  const scroll     = root.querySelector('#roster-scroll')
   const refreshBtn = root.querySelector('#roster-refresh')
+  const credBtn    = root.querySelector('#cred-btn')
 
-  // Load credentials
+  // 帳密按鈕：強制顯示登入表單（更新密碼用）
+  credBtn.addEventListener('click', () => {
+    renderLoginForm(scroll, uid, (employeeId, password) => {
+      _pairings = []
+      doFetch(scroll, refreshBtn, uid, employeeId, password)
+    })
+  })
+
+  // 讀取 credentials
   scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
   const creds = await getPegasysCreds(uid)
 
@@ -337,7 +376,7 @@ export async function renderRoster(root) {
     return
   }
 
-  // Auto-fetch on mount
+  // 自動取得班表
   doFetch(scroll, refreshBtn, uid, creds.employeeId, creds.password)
 
   refreshBtn.addEventListener('click', async () => {
@@ -356,30 +395,60 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
   scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
 
   try {
-    const result = await fetchRoster(employeeId, password)
-
-    // 判斷 pairings 格式
+    const result   = await fetchRoster(employeeId, password)
     const pairings = result.pairings
-    const isDebug  = pairings?._debug === true
-    const isRealPairings = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
+    const isReal   = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
+    const isDebug  = !Array.isArray(pairings) && pairings?._debug === true
 
-    if (isRealPairings) {
-      const futureCount = pairings.filter(p => isFuture(p.date)).length
-      showToast(`✅ 班表已更新（${futureCount} 筆即將到來）`)
+    if (isReal) {
+      _pairings = pairings
+
+      // 自動導航至最近有出勤的月份
+      const today    = todayStr()
+      const upcoming = pairings
+        .filter(p => p.date >= today)
+        .sort((a, b) => a.date.localeCompare(b.date))
+      if (upcoming.length > 0) {
+        _calYear  = parseInt(upcoming[0].date.slice(0, 4))
+        _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
+      } else {
+        _calYear  = new Date().getFullYear()
+        _calMonth = new Date().getMonth()
+      }
+
+      // 如果今天有執勤就自動選取
+      _selected = pairings.some(p => p.date === today) ? today : null
+
+      renderCalendar(scroll)
+      const futureCount = pairings.filter(p => p.date >= today).length
+      showToast(`✅ 班表已更新（${futureCount} 個出勤日）`)
+
     } else if (isDebug) {
-      showToast(`⚠ ${pairings._reason || '解析中'}（Debug 資訊已顯示）`)
-    } else if (Array.isArray(pairings) && pairings.length === 0) {
-      showToast('📅 本月無班表')
+      scroll.innerHTML = `
+        <div style="padding:16px">
+          <div class="card" style="border:1px solid #f59e0b44">
+            <div style="font-size:12px;font-weight:700;color:#f59e0b;margin-bottom:6px">
+              🔍 ${pairings._reason || '解析中'}
+            </div>
+            <div style="font-size:11px;font-family:monospace;color:var(--color-text-secondary)">
+              alloc: ${pairings.alloc_count ?? '?'} &nbsp;|&nbsp; activity: ${pairings.activity_count ?? '?'}
+            </div>
+          </div>
+        </div>`
+      showToast(`⚠ ${pairings._reason || '解析中'}`)
+
     } else {
-      showToast('⚠ 班表結構未知（Debug 資訊已顯示）')
+      _pairings = []
+      _calYear  = new Date().getFullYear()
+      _calMonth = new Date().getMonth()
+      renderCalendar(scroll)
+      showToast('📅 本月無班表')
     }
 
-    renderRosterContent(scroll, result, pairings ?? [])
   } catch (e) {
     if (e.status === 401) {
       await clearPegasysCreds(uid)
       showToast('❌ 帳號或密碼已失效，請重新登入')
-      const c2 = await getPegasysCreds(uid)  // will be cleared, triggers login form
       renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw))
     } else {
       showToast(`❌ ${e.message}`)
