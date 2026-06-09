@@ -114,7 +114,11 @@ function debugCard(wsResult) {
   if (!msgs.length && !attrs && !reason) return ''
 
   const msgRows = msgs.map(m =>
-    `<div style="color:${m.error ? '#ef4444' : '#a3e635'}">${m.name || '?'}${m.error ? ` ⚠${JSON.stringify(m.error).slice(0,60)}` : ''}</div>`
+    `<div style="color:${m.error ? '#ef4444' : '#a3e635'};margin-bottom:4px">
+      ${m.name || '?'}${m.error ? ` ⚠${JSON.stringify(m.error).slice(0,60)}` : ''}
+      ${m._keys ? `<br><span style="color:#888;font-size:10px">keys:${JSON.stringify(m._keys)}</span>` : ''}
+      ${m._preview ? `<br><span style="color:#aaa;font-size:10px;word-break:break-all">${m._preview.slice(0,300)}</span>` : ''}
+    </div>`
   ).join('')
 
   const loginKeys = wsResult?.debug_login_keys
