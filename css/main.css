@@ -4,25 +4,35 @@
    ══════════════════════════════════════════════ */
 
 :root {
-  --bg:          #080c12;
-  --surface:     #111820;
-  --card:        #19232f;
-  --card-hover:  #1f2e3e;
-  --border:      rgba(255,255,255,0.07);
-  --border-med:  rgba(255,255,255,0.12);
+  --bg:          #121e2c;
+  --surface:     #1b2d3e;
+  --card:        #243648;
+  --card-hover:  #2d4258;
+  --border:      rgba(255,255,255,0.11);
+  --border-med:  rgba(255,255,255,0.20);
 
-  --accent:      #00b4d8;
-  --accent-dim:  #007ea0;
-  --green:       #1ec86a;
-  --green-dim:   #0f7040;
-  --amber:       #f0a030;
-  --amber-dim:   #805010;
-  --red:         #e04040;
-  --red-dim:     #801a1a;
+  --accent:      #2ec5e8;
+  --accent-dim:  #1888a8;
+  --green:       #32d878;
+  --green-dim:   #1a6638;
+  --amber:       #f0aa30;
+  --amber-dim:   #7a5018;
+  --red:         #e84848;
+  --red-dim:     #882020;
 
-  --text:        #d8e8f4;
-  --text-dim:    #6888a0;
-  --text-faint:  #304858;
+  --text:        #e8f2fa;
+  --text-dim:    #8ab5cc;
+  --text-faint:  #507285;
+
+  /* Roster inline-style CSS var aliases */
+  --color-primary:        var(--accent);
+  --color-bg:             var(--bg);
+  --color-surface:        var(--surface);
+  --color-text:           var(--text);
+  --color-text-secondary: var(--text-dim);
+  --color-text-tertiary:  var(--text-faint);
+  --border-subtle:        rgba(255,255,255,0.10);
+  --bg-card:              var(--card);
 
   --font-mono:   'B612 Mono', 'JetBrains Mono', 'Courier New', monospace;
   --font-ui:     'B612', system-ui, -apple-system, sans-serif;
@@ -40,7 +50,7 @@ html, body {
   height: 100%;
   min-height: -webkit-fill-available;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 15px;
@@ -158,11 +168,11 @@ html, body {
 
 .nav-item {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  padding: 10px 8px;
+  align-items: center; justify-content: flex-end;
+  padding: 8px 8px 10px;
   gap: 4px;
   background: none; border: none;
-  color: var(--text-faint);
+  color: var(--text-dim);
   cursor: pointer;
   font-family: var(--font-ui);
   font-size: 10px;
@@ -1046,6 +1056,13 @@ html, body {
 
 .btn-full { width: 100%; }
 
+.btn-sm {
+  min-height: 36px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* ── Detail page ─────────────────────────────── */
 .detail-hero {
   background: var(--surface);
@@ -1409,9 +1426,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface);
+  background: #fff;
   border-radius: 10px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 .dash-pilot-info { flex: 1; min-width: 0; }
 .dash-pilot-name {
