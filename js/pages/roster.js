@@ -11,11 +11,12 @@ const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
 const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
-const STYLE_ID    = 'roster-cal-v2'
+const STYLE_ID    = 'roster-cal-v3'
 
 // ── CSS 注入（版本號防重複）─────────────────────
 function _injectStyles() {
   document.getElementById('roster-cal-v1')?.remove()  // 清除舊版
+  document.getElementById('roster-cal-v2')?.remove()  // 清除舊版
   if (document.getElementById(STYLE_ID)) return
   const s = document.createElement('style')
   s.id = STYLE_ID
@@ -26,7 +27,7 @@ function _injectStyles() {
       box-sizing:border-box;
     }
     .cal-day.cal-duty { cursor:pointer; }
-    .cal-day.cal-selected { background:rgba(255,255,255,.1); }
+    .cal-day.cal-selected { background:rgba(160,104,24,.10); }
     .cal-day-num {
       font-size:14px; line-height:26px; width:26px; height:26px;
       text-align:center; border-radius:50%; flex-shrink:0;
@@ -39,10 +40,10 @@ function _injectStyles() {
       font-size:9px; font-weight:700; line-height:1.3;
       text-align:center; word-break:keep-all;
     }
-    .cal-fn-future   { color:var(--color-primary,#60a5fa); }
-    .cal-fn-logged   { color:#4ade80; }
-    .cal-fn-unlogged { color:#fb923c; }
-    .cal-fn-old      { color:var(--color-text-tertiary); }
+    .cal-fn-future   { color:var(--accent,#a06818); }
+    .cal-fn-logged   { color:var(--green,#1a7838); }
+    .cal-fn-unlogged { color:var(--amber,#b85808); }
+    .cal-fn-old      { color:var(--text-faint,#9a7858); }
     .cal-dot {
       width:5px; height:5px; border-radius:50%;
       background:var(--color-primary,#60a5fa); margin-top:3px;
