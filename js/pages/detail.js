@@ -302,12 +302,12 @@ function _bearing(p1, p2) {
 
 // SVG airplane pointing NORTH (up) at 0° — rotate(hdg) needs no offset on any platform
 const _PLANE_SVG = `<svg viewBox="0 0 20 20" width="22" height="22" xmlns="http://www.w3.org/2000/svg">
-  <path fill="white" d="M10,1 L13,9 L19,11 L19,13 L13,11.5 L13,17 L15,18.5 L15,19.5 L10,18 L5,19.5 L5,18.5 L7,17 L7,11.5 L1,13 L1,11 L7,9 Z"/>
+  <path fill="#1e1610" d="M10,1 L13,9 L19,11 L19,13 L13,11.5 L13,17 L15,18.5 L15,19.5 L10,18 L5,19.5 L5,18.5 L7,17 L7,11.5 L1,13 L1,11 L7,9 Z"/>
 </svg>`
 
 function _planeIcon(hdg) {
   return L.divIcon({
-    html: `<div style="transform:rotate(${Math.round(hdg)}deg);line-height:0;filter:drop-shadow(0 0 3px rgba(0,0,0,0.9))">${_PLANE_SVG}</div>`,
+    html: `<div style="transform:rotate(${Math.round(hdg)}deg);line-height:0;filter:drop-shadow(0 0 4px rgba(255,255,255,1)) drop-shadow(0 0 2px rgba(255,255,255,0.8))">${_PLANE_SVG}</div>`,
     className: 'plane-marker-icon',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
@@ -319,7 +319,7 @@ function _planeIcon(hdg) {
 function _initMap(wrap) {
   wrap.innerHTML = `<div id="track-map" style="height:240px;border-radius:var(--radius)"></div>`
   const map = L.map('track-map', { zoomControl: false, attributionControl: false })
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map)
   return map
 }
 
@@ -333,9 +333,9 @@ function renderMap(root, track) {
   const latlngs = track.map(p => [p.la, p.lo])
 
   // Dim full-route line
-  L.polyline(latlngs, { color: '#00b4d8', weight: 2, opacity: 0.25 }).addTo(map)
+  L.polyline(latlngs, { color: '#a06818', weight: 2, opacity: 0.28 }).addTo(map)
   // Bright "flown" line (filled by timeline scrubber)
-  const flownLine = L.polyline([], { color: '#00d4f8', weight: 3, opacity: 0.9 }).addTo(map)
+  const flownLine = L.polyline([], { color: '#a06818', weight: 3.5, opacity: 0.88 }).addTo(map)
 
   map.fitBounds(L.latLngBounds(latlngs), { padding: [20, 20] })
 
