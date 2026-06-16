@@ -169,11 +169,11 @@ html, body {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: calc(-1 * var(--safe-bot));
   display: flex;
-  height: 64px;
-  min-height: 64px;
-  max-height: 64px;
+  height: calc(64px + var(--safe-bot));
+  min-height: calc(64px + var(--safe-bot));
+  max-height: calc(64px + var(--safe-bot));
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding-bottom: 0;
