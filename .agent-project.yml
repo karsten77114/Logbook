@@ -1,0 +1,13 @@
+name: Logbook
+type: pwa
+repo: karsten77114/Logbook.git
+working_root: .
+memory:
+  - ../../../000_Agent/memory/project_logbook.md
+  - ../../../000_Agent/memory/feedback_logbook_design.md
+rules:
+  - Logbook is an independent Git repo; work and commit from this folder.
+  - Verify browser UI after visual changes.
+  - Update the service worker version when cached JS, CSS, or data changes.
+  - For Kneeboard integration, use a shared spec under ../../../100_Todo/plans/.
+  - Do not write secrets in this repo.
