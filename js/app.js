@@ -23,6 +23,18 @@ import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
 const root = document.getElementById('app')
 
+function syncAppHeight() {
+  const height = window.visualViewport?.height || window.innerHeight
+  if (height) {
+    document.documentElement.style.setProperty('--app-height', `${height}px`)
+  }
+}
+
+syncAppHeight()
+window.visualViewport?.addEventListener('resize', syncAppHeight)
+window.addEventListener('resize', syncAppHeight)
+window.addEventListener('orientationchange', syncAppHeight)
+
 // ── Init ──────────────────────────────────────
 
 async function init() {
