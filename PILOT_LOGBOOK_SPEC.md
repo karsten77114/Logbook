@@ -2,6 +2,12 @@
 > 給 Claude Code 閱讀的專案說明文件
 > 本文件由 Claude (claude.ai) 與開發者討論後整理
 
+**Git Repo**：`karsten77114/Logbook.git`（獨立 repo，非 Karsten-Agent 子目錄）
+**部署**：GitHub Pages，push main 即上線
+**當前 SW 版本**：`logbook-v44`
+
+> ⚠️ 重要：所有 git 指令必須在 `100_Todo/Dev/Logbook/` 目錄執行，不能從父目錄 Karsten-Agent 操作。
+
 ---
 
 ## 專案背景
@@ -401,5 +407,174 @@ Firebase 免費額度 1GB，預計 10 年內不會超過。
 
 ---
 
-*文件版本：2026-05-26*
+---
+
+## Firestore 資料路徑詳細架構
+
+| 路徑 | 用途 |
+|------|------|
+| `users/{uid}/meta/profile` | 使用者個人資料（name, airline 等） |
+| `users/{uid}/meta/crew` | Crew 成員清單 |
+| `users/{uid}/meta/aircraft` | 飛機設定（`settings` + `custom` 兩個欄位） |
+| `users/{uid}/flights/{id}` | 個別航班記錄 |
+
+### aircraft 文件結構
+
+```js
+// users/{uid}/meta/aircraft
+{
+  settings: {
+    'B-58209': { active: true, typeOverride: 'A321-252NX', notes: '常飛機', deleted: false },
+    'B-16851': { active: false, deleted: true },
+  },
+  custom: [
+    { reg: 'B-XXXX', type: 'B737-800' },
+  ]
+}
+```
+
+> ⚠️ `saveAircraftSettings` 必須加 `{ merge: true }`，否則會覆蓋掉 `custom` 欄位。
+
+---
+
+## 飛機管理規格
+
+### 兩種飛機的差異
+
+| | 機隊飛機（Fleet） | 自訂飛機（Custom） |
+|-|---|---|
+| **來源** | `js/data/fleet.js` 靜態資料 | Firestore `custom` 陣列 |
+| **顯示** | Airplanes tab，按型別分組 | Airplanes tab，Custom 區塊 |
+| **詳情頁** | `airplane-detail.js`（navigate） | `showCustomAircraftEditSheet`（overlay，不 navigate） |
+| **可編輯欄位** | Type（typeOverride）、Notes | Reg、Type |
+| **刪除方式** | 設定 `aircraftSettings[reg].deleted = true` | 從 Firestore custom 陣列移除 |
+
+> ⚠️ `airplane-detail.js` 僅處理 fleet aircraft。Custom aircraft 的 reg 不在 FLEET，`if (!reg || !info) { navigate('list'); return }` 會直接跳走，必須走 `showCustomAircraftEditSheet`（overlay）處理。
+
+### aircraftSettings 各欄位
+
+```js
+aircraftSettings[reg] = {
+  active: Boolean,        // Active/Inactive 切換（顯示於統計）
+  typeOverride: String,   // 覆蓋 FLEET 靜態資料的型別顯示
+  notes: String,          // 個人備註
+  deleted: Boolean,       // 從 Airplanes tab 隱藏
+}
+```
+
+---
+
+## 檔案架構
+
+```
+Logbook/
+├── index.html
+├── sw.js                      # Service Worker（版本控制快取）
+├── js/
+│   ├── app.js                 # Router + 初始化 + showToast
+│   ├── auth.js                # Firebase Auth
+│   ├── db.js                  # Firestore CRUD
+│   ├── state.js               # 全域 state（user, profile, crew, aircraftSettings, customAircraft）
+│   ├── config.js              # Firebase config
+│   ├── data/
+│   │   ├── fleet.js           # 靜態機隊資料 FLEET + ALL_REGISTRATIONS
+│   │   ├── airports.js        # 機場資料
+│   │   ├── airlines.js        # 航空公司資料
+│   │   └── countries.js       # 國家選擇器（含搜尋 UI）
+│   ├── pages/
+│   │   ├── list.js            # Flights / Crew / Airplanes tab（主列表頁）
+│   │   ├── add.js             # 新增航班精靈（Wizard）
+│   │   ├── detail.js          # 航班詳情 + 編輯
+│   │   ├── dashboard.js       # 首頁統計 + 航空公司選擇器
+│   │   ├── settings.js        # 設定頁
+│   │   ├── crew-detail.js     # Crew 詳情 + 編輯
+│   │   └── airplane-detail.js # 飛機詳情 + 編輯（僅 fleet aircraft）
+│   └── utils/
+│       ├── time.js            # 時間格式化工具
+│       └── nighttime.js       # 夜間飛行計算
+```
+
+---
+
+## 已完成功能（截至 SW v44）
+
+### UI / UX
+- [x] 全介面英文化
+- [x] 底部導覽列改為 flex in-flow（修正 `position:absolute` 造成的底部空白）
+- [x] Year divider：航班列表按年份分隔（sticky，仿 Log ATP 2）
+- [x] Stats header 移除重複 `padding-top`
+- [x] Airline logo：白色背景，圖片載入後隱藏 fallback 文字
+
+### 選擇器（Picker）
+- [x] 國籍選擇器（countries.js）搜尋欄置頂（防鍵盤遮住結果）
+- [x] 航空公司選擇器（dashboard.js）搜尋欄置頂
+
+### 飛機管理
+- [x] 自訂飛機從 localStorage 遷移至 Firestore
+- [x] Airplanes tab「+」按鈕 → Add Aircraft sheet
+- [x] 自訂飛機點擊 → Edit sheet（可改 Reg/Type，可 Remove）
+- [x] 機隊飛機 airplane-detail.js 加 Edit 按鈕（Type 覆蓋 / Notes / Remove）
+- [x] Airplanes tab 過濾 deleted 飛機，並套用 typeOverride 顯示
+
+### 資料修正
+- [x] B-16854 從 fleet.js 移除（不存在機號）
+
+---
+
+## 已知問題
+
+| 問題 | 狀態 | 說明 |
+|------|------|------|
+| 底部安全邊距空隙 | ⚠️ 未解 | 部分 iOS 裝置 home indicator 下方仍有多餘空白，多次修正後殘留 |
+| 機隊飛機無法直接從清單編輯 | ⚠️ 待確認 | 使用者反映已存在的飛機不能編輯（2026-05-29 回報） |
+| Flights 統計區頂部空白過大 | ⚠️ 待修 | 儀表板數值上方有一塊明顯空白區，用途不明（2026-05-29 回報） |
+
+---
+
+## SW 版本紀錄
+
+| 版本 | 主要變更 |
+|------|---------|
+| v37 | 初始英文化 + crew nationality 國旗 |
+| v38 | countries.js 加入 PRECACHE |
+| v39 | 自訂飛機 Firestore 遷移、bottom nav 修正 |
+| v40 | Airplanes "+" Add Aircraft |
+| v41 | Year dividers、stats header 修正 |
+| v42 | 搜尋欄移頂部、airline logo 修正 |
+| v43 | airplane-detail.js Edit 功能（初版：僅 Notes，Type 唯讀） |
+| v44 | Edit 功能完整版：Type 可改、Remove Aircraft、Airplanes 過濾 deleted |
+
+---
+
+## 踩坑規則（強制）
+
+### 1. saveAircraftSettings 必須 merge: true
+```js
+// ❌ 錯誤：覆蓋掉 custom 欄位
+await setDoc(doc(...), { settings })
+
+// ✅ 正確
+await setDoc(doc(...), { settings }, { merge: true })
+```
+
+### 2. git 操作必須在子目錄執行
+```bash
+# ❌ 在父目錄看到的是 Karsten-Agent 的 commits
+cd ~/…/Karsten-Agent && git log
+
+# ✅ 正確
+cd ~/…/Karsten-Agent/100_Todo/Dev/Logbook && git log
+```
+
+### 3. SW 版本號每次 JS/CSS/資料檔改動都要 bump
+- 任何被 PRECACHE 的檔案修改 → 必升 SW 版本號，否則手機讀快取舊檔
+
+### 4. Custom aircraft 不走 airplane-detail.js
+- 見飛機管理規格章節
+
+### 5. fleet.js 改動 → 必升 SW 版本
+
+---
+
+*文件版本：2026-05-29*
 *整理自 claude.ai 對話*
