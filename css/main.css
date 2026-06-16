@@ -161,18 +161,20 @@ html, body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-bottom: calc(var(--safe-bot) + 16px);
+  padding-bottom: 80px;
 }
 
 /* ── Bottom nav ──────────────────────────────── */
 .bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   height: 64px;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding-bottom: 0;
-  padding-bottom: var(--nav-safe-bot);
-  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0);
   z-index: 10;
 }
 
