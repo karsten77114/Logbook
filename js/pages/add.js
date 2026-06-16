@@ -20,6 +20,8 @@ import { isAircraftActive,
          isCrewActive }            from '../state.js'
 import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
+import { getLatestUnloggedLeg,
+         WORKER_URL }               from './roster.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
@@ -146,6 +148,54 @@ export function renderAdd(root) {
     })
   })
 
+  // ── Step 1 — 機號自動帶入（Worker /api/gate，AeroDataBox，免 LIDO）──
+  // fn + date 一齊知道後查實際派遣機號，自動填入 Step 3 Registration/Type
+  let _lastAcLookup = ''
+  async function tryAutoFillAircraft() {
+    const fn   = (root.querySelector('#f-fn')?.value || form.flightNumber || '').trim().toUpperCase()
+    const date = root.querySelector('#f-date')?.value || form.date
+    if (!fn || !date) return
+    const key = `${fn}_${date}`
+    if (key === _lastAcLookup) return   // 避免同一組重複查
+    _lastAcLookup = key
+
+    try {
+      const resp = await fetch(`${WORKER_URL}/api/gate?fno=${encodeURIComponent(fn)}&date=${date}`)
+      if (!resp.ok) return
+      const data = await resp.json()
+      if (!data.aircraft) return
+
+      const reg  = data.aircraft.toUpperCase()
+      // 已知機號優先用本地機隊資料的簡寫型號（如 A321-252NX），
+      // Worker/AeroDataBox 回傳的 acType 是完整名稱（如 "Airbus A321 NEO"），只在機號未知時當備援
+      const type = getTypeByReg(reg) || data.acType || form.aircraftType
+
+      // 若該機號不在現有機隊/自訂清單，自動加入自訂機隊
+      const known = ALL_REGISTRATIONS.includes(reg) || getCustomAircraft().some(a => a.reg === reg)
+      if (!known) await addCustomAircraftEntry(reg, type)
+
+      form.registration = reg
+      form.aircraftType = type
+
+      // 同步 Step 3 UI（無論目前在哪一步都先更新好，使用者翻到時就看到）
+      const regSel = root.querySelector('#f-reg')
+      if (regSel) {
+        if (!regSel.querySelector(`option[value="${reg}"]`)) {
+          const opt = document.createElement('option')
+          opt.value = reg
+          opt.textContent = `${reg} — ${type}`
+          regSel.appendChild(opt)
+        }
+        regSel.value = reg
+      }
+      const typeEl = root.querySelector('#f-type-display')
+      if (typeEl) typeEl.textContent = type || '—'
+    } catch (_) {}
+  }
+
+  root.querySelector('#f-fn')?.addEventListener('blur', tryAutoFillAircraft)
+  root.querySelector('#f-date')?.addEventListener('change', tryAutoFillAircraft)
+
   // ── Step 2 — time calc ───────────────────────
   const blockVal  = root.querySelector('#c-block')
   const flightVal = root.querySelector('#c-flight')
@@ -183,8 +233,19 @@ export function renderAdd(root) {
     }
   }
 
-  ;['f-out', 'f-off', 'f-on', 'f-in'].forEach(id => {
-    root.querySelector(`#${id}`)?.addEventListener('input', recalc)
+  const OOOI_IDS = ['f-out', 'f-off', 'f-on', 'f-in']
+  OOOI_IDS.forEach((id, i) => {
+    const input = root.querySelector(`#${id}`)
+    input?.addEventListener('input', e => {
+      // 純數字 + 限 4 碼（避免貼上或某些鍵盤帶入非數字字元）
+      e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4)
+      recalc()
+      if (e.target.value.length === 4) {
+        const nextId = OOOI_IDS[i + 1]
+        if (nextId) root.querySelector(`#${nextId}`)?.focus()
+        else e.target.blur()
+      }
+    })
   })
   nightInp?.addEventListener('input', () => { nightInp.dataset.manual = '1' })
 
@@ -202,11 +263,12 @@ export function renderAdd(root) {
   })
 
   // ── Step 4 — toggles ─────────────────────────
-  root.querySelectorAll('.toggle-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const key = card.dataset.toggle
+  root.querySelectorAll('[data-toggle]').forEach(row => {
+    row.addEventListener('click', () => {
+      const key = row.dataset.toggle
       form[key] = !form[key]
-      card.classList.toggle('on', form[key])
+      row.dataset.val = form[key] ? '1' : '0'
+      row.querySelector('.hub-toggle-switch')?.classList.toggle('on', form[key])
     })
   })
 
@@ -271,6 +333,11 @@ export function renderAdd(root) {
   updateNav(root, 0, btnBack, btnNext)
   renderSheetList(sheetList, crewSlots, -1, '')
 
+  // 已有 fn+date 來源（Roster 補記錄按鈕 / PegaSys 連結）但沒帶機號 → 立即查
+  if (prefill.flightNumber && prefill.date && !prefill.registration) {
+    tryAutoFillAircraft()
+  }
+
   // Pre-fill cockpit crew from roster URL params (PegaSys bookmarklet)
   if (prefill.rosterCrew?.length && state.crew?.length) {
     const cockpitRanks = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'CP', 'FI'])
@@ -286,6 +353,27 @@ export function renderAdd(root) {
       }
     }
     if (slot > 0) renderCrewSlots(root, crewSlots)
+  }
+
+  // ── 直接點 + 新增（非經 Roster 補記錄按鈕）：自動帶入最新一筆尚未記錄的 leg ─
+  if (!prefill.flightNumber) {
+    const fnEl = root.querySelector('#f-fn')
+    // 先帶入公司代碼，使用者只需補班號數字；若後面 Roster 查到完整班號會覆蓋
+    const airlineIata = state.profile?.airlineIata
+    if (airlineIata && fnEl) fnEl.value = airlineIata
+
+    getLatestUnloggedLeg(state.user.uid).then(leg => {
+      if (!leg || currentStep !== 0) return   // 使用者已翻到後面步驟就不打擾
+      const fromEl = root.querySelector('#f-from')
+      const toEl   = root.querySelector('#f-to')
+      const dateEl = root.querySelector('#f-date')
+      if (fnEl)                    { fnEl.value   = leg.flightNumber; form.flightNumber = leg.flightNumber }
+      if (fromEl && !fromEl.value) { fromEl.value = leg.from;          form.from         = leg.from }
+      if (toEl   && !toEl.value)   { toEl.value   = leg.to;            form.to           = leg.to }
+      if (dateEl && leg.date)      { dateEl.value = leg.date;          form.date         = leg.date }
+      showToast(`已從 Roster 帶入 ${leg.flightNumber}  ${leg.from} → ${leg.to}`, 'success')
+      tryAutoFillAircraft()
+    }).catch(() => {})
   }
 }
 
@@ -691,12 +779,12 @@ function step3Html(form) {
 
 function step4Html(form) {
   const toggles = [
-    { id: 'pfTakeoff', icon: '↑', label: 'PF Takeoff' },
-    { id: 'pfLanding', icon: '↓', label: 'PF Landing' },
-    { id: 'pic',       icon: '★', label: 'PIC' },
-    { id: 'autoland',  icon: '⊙', label: 'Autoland' },
-    { id: 'goAround',  icon: '↻', label: 'Go-Around' },
-    { id: 'diverted',  icon: '⚡', label: 'Diverted' },
+    { id: 'pfTakeoff', label: 'PF Takeoff' },
+    { id: 'pfLanding', label: 'PF Landing' },
+    { id: 'pic',       label: 'PIC' },
+    { id: 'autoland',  label: 'Autoland' },
+    { id: 'goAround',  label: 'Go-Around' },
+    { id: 'diverted',  label: 'Diverted' },
   ]
   return `
     <div class="wizard-step" data-step="3">
@@ -705,11 +793,11 @@ function step4Html(form) {
         <div class="step-title">Piloting</div>
       </div>
 
-      <div class="toggle-grid">
+      <div class="dash-card" style="padding:4px 16px;margin:4px 0">
         ${toggles.map(t => `
-          <div class="toggle-card ${form[t.id] ? 'on' : ''}" data-toggle="${t.id}">
-            <span class="toggle-card-icon">${t.icon}</span>
-            <span class="toggle-card-label">${t.label}</span>
+          <div class="edit-toggle-row" data-toggle="${t.id}" data-val="${form[t.id] ? '1' : '0'}">
+            <span class="edit-toggle-lbl">${t.label}</span>
+            <div class="hub-toggle-switch ${form[t.id] ? 'on' : ''}"></div>
           </div>`).join('')}
       </div>
 

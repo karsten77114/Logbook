@@ -7,7 +7,7 @@ import { getFirebaseApp }        from '../auth.js'
 import { state }                 from '../state.js'
 import { navigate, showToast }   from '../app.js'
 
-const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
+export const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
 const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
@@ -143,6 +143,44 @@ async function loadLoggedFlights(uid, pairings) {
     console.warn('[Roster] loadLoggedFlights failed:', e)
     _loggedFlights = new Map()
   }
+}
+
+// ── 給 Add Flight 用：取得「最新一筆尚未記錄」的 leg ─
+// 供 add.js 在使用者直接點 + 新增（非經 Roster 補記錄按鈕）時自動帶入
+export async function getLatestUnloggedLeg(uid) {
+  const creds = await getPegasysCreds(uid)
+  if (!creds?.employeeId || !creds?.password) return null
+
+  let pairings
+  try {
+    const result = await fetchRoster(creds.employeeId, creds.password)
+    pairings = result.pairings
+    if (!Array.isArray(pairings) || !pairings.length || !pairings[0]?.date) return null
+  } catch { return null }
+
+  await loadLoggedFlights(uid, pairings)
+
+  const today  = todayStr()
+  const cutoff = _daysAgo(PAST_DAYS_LIMIT)
+
+  // 含今天、不含未來；由新到舊
+  const candidates = pairings
+    .filter(p => p.date <= today && p.date >= cutoff)
+    .flatMap(p => (p.legs || []).map(lg => ({ ...lg, date: p.date })))
+    .sort((a, b) => b.date.localeCompare(a.date))
+
+  for (const lg of candidates) {
+    const fn = lg.flightNumber.replace(/^JX/i, '')
+    if (!_loggedFlights.has(`${lg.date}_${fn}`)) {
+      return {
+        flightNumber: lg.flightNumber,
+        date:         _dsToIso(lg.date),
+        from:         lg.dep,
+        to:           lg.dest,
+      }
+    }
+  }
+  return null
 }
 
 // ── 月曆狀態 ──────────────────────────────────

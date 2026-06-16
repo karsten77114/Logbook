@@ -365,17 +365,20 @@ function statsGridHtml(s) {
 }
 
 // ── Recent Activity ────────────────────────────
+// STARLUX FOM 4.7.5：flight time 不得超過 120hr/30 consecutive days、300hr/90 consecutive days。
+// 7 天無多人組員適用的明訂飛時上限（該欄位為 N/A，僅規範最低休息時數），
+// 沿用同表 single-pilot 欄位的 32hr/7days 作為刻度基準（量級與 120/30 換算後的 28hr 接近）。
+const FTL_CAP_MIN = { 7: 32 * 60, 30: 120 * 60, 90: 300 * 60 }
 
 function activityHtml(s) {
-  const max = Math.max(s.act7, s.act30, s.act90, 1)
-  const bar = (val) => `
+  const bar = (val, capMin) => `
     <div class="act-bar-bg">
-      <div class="act-bar-fill" style="width:${Math.round(val/max*100)}%"></div>
+      <div class="act-bar-fill" style="width:${Math.min(100, Math.round(val/capMin*100))}%"></div>
     </div>`
   const rows = [
-    { label: '7 Days',  val: s.act7  },
-    { label: '30 Days', val: s.act30 },
-    { label: '90 Days', val: s.act90 },
+    { label: '7 Days',  val: s.act7,  cap: FTL_CAP_MIN[7]  },
+    { label: '30 Days', val: s.act30, cap: FTL_CAP_MIN[30] },
+    { label: '90 Days', val: s.act90, cap: FTL_CAP_MIN[90] },
   ]
   return `
     <div class="dash-card">
@@ -383,7 +386,7 @@ function activityHtml(s) {
       ${rows.map(r => `
         <div class="act-row">
           <span class="act-label">${r.label}</span>
-          ${bar(r.val)}
+          ${bar(r.val, r.cap)}
           <span class="act-val">${fmtDuration(r.val)}</span>
         </div>`).join('')}
     </div>`
@@ -400,14 +403,16 @@ function currencyHtml(s) {
 
   const expStr = (exp) => {
     if (!exp) return '—'
-    const now     = Date.now()
-    const expMs   = exp.getTime()
-    const daysLeft = Math.ceil((expMs - now) / 86400000)
+    // exp 是失效日（第 90 天，當天已不合格）；最後一個合格日是 exp 前一天
+    const now           = new Date()
+    const todayMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    const lastValidMs   = exp.getTime() - 86400000
+    const daysLeft       = Math.floor((lastValidMs - todayMidnight) / 86400000)
     const dateStr = exp.toLocaleDateString('en', {
       day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC'
     })
     const color = daysLeft <= 30 ? 'var(--red)' : daysLeft <= 60 ? 'var(--amber)' : 'var(--green)'
-    return `<span style="color:${color}">${dateStr}<br>${daysLeft > 0 ? daysLeft + ' days to go' : 'EXPIRED'}</span>`
+    return `<span style="color:${color}">${dateStr}<br>${daysLeft >= 0 ? daysLeft + ' days to go' : 'EXPIRED'}</span>`
   }
 
   const toCount  = s.lastToFlights.length

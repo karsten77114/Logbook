@@ -730,37 +730,6 @@ html, body {
 }
 .rwy-input::placeholder { color: var(--text-faint); font-weight: 400; font-size: 16px; }
 
-/* Step 4 Toggle cards */
-.toggle-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 4px 0;
-}
-.toggle-card {
-  background: var(--surface);
-  border: 1px solid var(--border-med);
-  border-radius: 12px;
-  padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-  user-select: none;
-}
-.toggle-card.on {
-  background: rgba(160,104,24,0.10);
-  border-color: rgba(160,104,24,0.45);
-}
-.toggle-card-icon { font-size: 22px; color: var(--text-dim); transition: color 0.15s; }
-.toggle-card-label {
-  font-size: 15px; font-weight: 600;
-  color: var(--text-dim);
-  transition: color 0.15s;
-  line-height: 1.2;
-}
-.toggle-card.on .toggle-card-icon,
-.toggle-card.on .toggle-card-label { color: var(--accent); }
-
 /* Num grid (load data) */
 .num-grid {
   display: grid;
@@ -1693,7 +1662,6 @@ html, body {
   .step-labels   { max-width: 640px; margin-left: auto; margin-right: auto; }
   .wizard-progress { max-width: 640px; margin-left: auto; margin-right: auto; }
   .step-nav      { max-width: 640px; margin-left: auto; margin-right: auto; }
-  .toggle-grid   { grid-template-columns: repeat(3, 1fr); }
   .login-page    { max-width: 400px; margin: 0 auto; }
   .detail-cards  { max-width: 720px; margin: 0 auto; }
   .hub-dropdown  { max-width: 640px; left: 50%; transform: translateX(-50%); right: auto; }

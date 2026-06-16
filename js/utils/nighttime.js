@@ -46,7 +46,10 @@ export function calcNightTime(date, offTime, onTime, fromIATA, toIATA) {
 
   for (let ms = offUtc; ms < onUtc; ms += SAMPLE * 60000) {
     const times = SunCalc.getTimes(new Date(ms), coords[0], coords[1])
-    const isNight = new Date(ms) < times.sunrise || new Date(ms) > times.sunset
+    // 航空業界定義：夜間 = 民用晨昏蒙影之外（太陽在地平線下 6 度，dawn/dusk）
+    // 而非單純日出日落（sunrise/sunset，地平線下 0.833 度）
+    // 前者範圍較窄，符合 ICAO/FAA night time 定義
+    const isNight = new Date(ms) < times.dawn || new Date(ms) > times.dusk
     if (isNight) nightSamples++
     totalSamples++
   }
