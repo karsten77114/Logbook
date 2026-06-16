@@ -12,6 +12,7 @@ const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
 const STYLE_ID    = 'roster-cal-v3'
+const ROSTER_TIMEOUT_MS = 15000
 
 // ── CSS 注入（版本號防重複）─────────────────────
 function _injectStyles() {
@@ -91,14 +92,21 @@ function _daysAgo(n) {
 
 // ── Worker fetch ──────────────────────────────
 async function fetchRoster(employeeId, password) {
-  const resp = await fetch(`${WORKER_URL}/pegasys/roster`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ employeeId, password }),
-  })
-  const data = await resp.json()
-  if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
-  return data
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
+  try {
+    const resp = await fetch(`${WORKER_URL}/pegasys/roster`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId, password }),
+      signal: ctrl.signal,
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+    return data
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ── Logbook 連動：查詢過去航班是否已記錄 ─────
@@ -489,6 +497,30 @@ function renderLoginForm(scroll, uid, onSuccess) {
   uidInp.addEventListener('keydown', e => { if (e.key === 'Enter') pwInp.focus() })
 }
 
+function renderRosterLoading(scroll, message = '正在讀取 PegaSys 班表…') {
+  scroll.innerHTML = `
+    <div class="roster-state">
+      <div class="loader"></div>
+      <div class="roster-state-title">${message}</div>
+      <div class="roster-state-sub">通常幾秒內會完成；若密碼剛更新，可能需要重新設定帳密。</div>
+    </div>`
+}
+
+function renderRosterError(scroll, { title, message, showCreds = true }, onRetry, onCreds) {
+  scroll.innerHTML = `
+    <div class="roster-state">
+      <div class="roster-state-icon">⚠</div>
+      <div class="roster-state-title">${title}</div>
+      <div class="roster-state-sub">${message}</div>
+      <div class="roster-state-actions">
+        <button class="btn btn-primary btn-sm" id="roster-retry">重新整理</button>
+        ${showCreds ? '<button class="btn btn-secondary btn-sm" id="roster-creds">帳密設定</button>' : ''}
+      </div>
+    </div>`
+  scroll.querySelector('#roster-retry')?.addEventListener('click', onRetry)
+  scroll.querySelector('#roster-creds')?.addEventListener('click', onCreds)
+}
+
 // ── Main export ───────────────────────────────
 export async function renderRoster(root) {
   const uid = state.user?.uid
@@ -528,7 +560,7 @@ export async function renderRoster(root) {
   })
 
   // 讀取 credentials
-  scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
+  renderRosterLoading(scroll, '正在讀取帳密設定…')
   const creds = await getPegasysCreds(uid)
 
   if (!creds?.employeeId || !creds?.password) {
@@ -554,7 +586,13 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
   _fetching = true
   refreshBtn.disabled = true
   refreshBtn.textContent = '…'
-  scroll.innerHTML = `<div class="list-loading"><div class="loader"></div></div>`
+  renderRosterLoading(scroll)
+
+  const slowTimer = setTimeout(() => {
+    if (_fetching) {
+      renderRosterLoading(scroll, 'PegaSys 回應較久，仍在等待…')
+    }
+  }, 8000)
 
   try {
     const result   = await fetchRoster(employeeId, password)
@@ -618,14 +656,20 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
       showToast('❌ 帳號或密碼已失效，請重新登入')
       renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw))
     } else {
-      showToast(`❌ ${e.message}`)
-      scroll.innerHTML = `
-        <div style="padding:32px 16px;text-align:center">
-          <div style="font-size:32px;margin-bottom:12px">⚠</div>
-          <div style="font-size:14px;color:var(--color-text-secondary)">${e.message}</div>
-        </div>`
+      const isTimeout = e.name === 'AbortError'
+      const message = isTimeout
+        ? 'PegaSys 或同步 Worker 回應逾時。請稍後重試；如果公司剛更新密碼，請重新設定帳密。'
+        : e.message
+      showToast(`❌ ${isTimeout ? '班表讀取逾時' : e.message}`)
+      renderRosterError(scroll, {
+        title: isTimeout ? '班表讀取逾時' : '班表讀取失敗',
+        message,
+      }, () => doFetch(scroll, refreshBtn, uid, employeeId, password), () => {
+        renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw))
+      })
     }
   } finally {
+    clearTimeout(slowTimer)
     _fetching = false
     refreshBtn.disabled = false
     refreshBtn.textContent = '↻'

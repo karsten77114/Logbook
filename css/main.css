@@ -225,6 +225,18 @@ html, body {
   width: 100%; gap: 12px;
 }
 
+.login-error {
+  display: none;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--red-dim);
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}
+.login-error.show { display: block; }
+
 .btn-sign-in {
   display: flex; align-items: center; justify-content: center;
   gap: 12px;
@@ -486,23 +498,53 @@ html, body {
 .step-labels {
   display: flex;
   gap: 6px;
-  padding: 5px 20px 10px;
+  padding: 8px 20px 12px;
   flex-shrink: 0;
 }
 .step-lbl {
   flex: 1;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  text-align: center;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: var(--font-ui);
   cursor: pointer;
-  transition: color 0.2s;
-  padding: 4px 0;        /* 加大點擊區域 */
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  padding: 6px 5px;
+  min-height: 34px;
   -webkit-tap-highlight-color: transparent;
 }
-.step-lbl.active { color: var(--accent); }
-.step-lbl.done   { color: var(--green); }
+.step-lbl.active {
+  background: rgba(160,104,24,0.12);
+  border-color: rgba(160,104,24,0.35);
+  color: var(--accent);
+}
+.step-lbl.done {
+  background: rgba(26,120,56,0.10);
+  border-color: rgba(26,120,56,0.25);
+  color: var(--green);
+}
+.step-lbl-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+.step-lbl-text {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* viewport 層：不撐滿全部剩餘高度，讓 step-nav 緊跟內容 */
 .wizard-steps-port {
@@ -888,11 +930,23 @@ html, body {
 /* 底部 Back / Continue 按鈕 */
 .step-nav {
   display: flex; gap: 10px;
+  flex-wrap: wrap;
   padding: 12px 20px;
   padding-bottom: max(20px, var(--safe-bot));
   background: var(--bg);
   flex-shrink: 0;
 }
+.wizard-error {
+  display: none;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--red-dim);
+  color: var(--red);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.wizard-error.show { display: block; }
 .btn-wiz-back {
   background: var(--surface);
   border: 1px solid var(--border-med);
@@ -1332,6 +1386,38 @@ html, body {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.roster-state {
+  min-height: 55vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 24px calc(var(--safe-bot) + 36px);
+  text-align: center;
+  gap: 12px;
+}
+.roster-state-icon {
+  font-size: 34px;
+  line-height: 1;
+  opacity: 0.8;
+}
+.roster-state-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.roster-state-sub {
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.roster-state-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
 }
 
 /* ── Toast ───────────────────────────────────── */
@@ -2301,4 +2387,3 @@ html, body {
   font-size: 15px;
   color: var(--text);
 }
-

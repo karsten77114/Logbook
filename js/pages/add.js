@@ -106,6 +106,9 @@ export function renderAdd(root) {
   const sheetSearch = root.querySelector('#sheet-search')
   const sheetList   = root.querySelector('#sheet-list')
 
+  root.addEventListener('input', () => setWizardError(root, ''))
+  root.addEventListener('change', () => setWizardError(root, ''))
+
   // ── Cancel ───────────────────────────────────
   root.querySelector('#btn-cancel').addEventListener('click', () => navigate('list'))
 
@@ -326,6 +329,7 @@ export function renderAdd(root) {
       currentStep = idx
       goToStep(root, currentStep, wizSteps)
       updateNav(root, currentStep, btnBack, btnNext)
+      setWizardError(root, '')
     })
   })
 
@@ -466,6 +470,13 @@ function updateNav(root, step, btnBack, btnNext) {
   }
 }
 
+function setWizardError(root, message) {
+  const el = root.querySelector('#wizard-error')
+  if (!el) return
+  el.textContent = message || ''
+  el.classList.toggle('show', Boolean(message))
+}
+
 // ── Validate ──────────────────────────────────
 
 function validateStep(root, form, step) {
@@ -473,16 +484,18 @@ function validateStep(root, form, step) {
     const date = root.querySelector('#f-date')?.value
     const from = root.querySelector('#f-from')?.value
     const to   = root.querySelector('#f-to')?.value
-    if (!date)        { showToast('Please enter a date', 'error'); return false }
-    if (!from || !to) { showToast('Please enter departure and arrival airports', 'error'); return false }
+    if (!date)        { setWizardError(root, 'Please enter a date.'); showToast('Please enter a date', 'error'); return false }
+    if (!from || !to) { setWizardError(root, 'Please enter departure and arrival airports.'); showToast('Please enter departure and arrival airports', 'error'); return false }
   }
   if (step === 1) {
     const out = root.querySelector('#f-out')?.value
     const inT = root.querySelector('#f-in')?.value
     if (!isValidHm(out) || !isValidHm(inT)) {
+      setWizardError(root, 'Please enter OUT and IN times in HHMM format.')
       showToast('Please enter OUT / IN times (HHMM)', 'error'); return false
     }
   }
+  setWizardError(root, '')
   return true
 }
 
@@ -588,7 +601,10 @@ function buildHTML(form) {
 
         <div class="step-labels">
           ${STEP_LABELS.map((lbl, i) =>
-            `<div class="step-lbl ${i === 0 ? 'active' : ''}">${lbl}</div>`
+            `<button type="button" class="step-lbl ${i === 0 ? 'active' : ''}" aria-label="Go to ${lbl} step">
+              <span class="step-lbl-num">${i + 1}</span>
+              <span class="step-lbl-text">${lbl}</span>
+            </button>`
           ).join('')}
         </div>
 
@@ -603,6 +619,7 @@ function buildHTML(form) {
         </div>
 
         <div class="step-nav">
+          <div class="wizard-error" id="wizard-error" aria-live="polite"></div>
           <button class="btn-wiz-back" id="btn-wiz-back" style="display:none">← Back</button>
           <button class="btn-wiz-next" id="btn-wiz-next">Continue</button>
         </div>

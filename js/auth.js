@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════
 import { initializeApp }                          from 'firebase/app'
 import { getAuth, GoogleAuthProvider, OAuthProvider,
-         signInWithPopup, signInWithRedirect,
+         signInWithPopup,
          getRedirectResult, onAuthStateChanged,
          signOut }                                from 'firebase/auth'
 import { firebaseConfig }                         from './config.js'
@@ -21,8 +21,8 @@ export function getFirebaseApp()  { return _app }
 
 /**
  * Google 登入
- * 優先使用 popup（iOS Safari 也適用）；
- * 若 popup 被封鎖則 fallback 到 redirect。
+ * 優先使用 popup（iOS Safari 也適用）。
+ * 不 fallback 到 redirect：嵌入式 / storage-partitioned browser 會遺失 Firebase initial state。
  */
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider()
@@ -31,10 +31,10 @@ export async function signInWithGoogle() {
     const result = await signInWithPopup(_auth, provider)
     return result.user
   } catch (e) {
-    // popup 被封鎖時改用 redirect
     if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
-      await signInWithRedirect(_auth, provider)
-      return null
+      const err = new Error('登入視窗無法開啟。請允許彈出視窗，或用 Safari / Chrome 開啟 Logbook 後再登入。')
+      err.code = e.code
+      throw err
     }
     throw e
   }
@@ -53,8 +53,9 @@ export async function signInWithApple() {
     return result.user
   } catch (e) {
     if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
-      await signInWithRedirect(_auth, provider)
-      return null
+      const err = new Error('登入視窗無法開啟。請允許彈出視窗，或用 Safari / Chrome 開啟 Logbook 後再登入。')
+      err.code = e.code
+      throw err
     }
     throw e
   }
