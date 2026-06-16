@@ -43,6 +43,7 @@
   --radius:      14px;
   --radius-sm:   10px;
   --app-height:  100dvh;
+  --nav-h:       52px;
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bot:    env(safe-area-inset-bottom, 0px);
   --nav-safe-bot: 0px;
@@ -161,7 +162,7 @@ html, body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding-bottom: 80px;
+  padding-bottom: calc(var(--nav-h) + 16px);
 }
 
 /* ── Bottom nav ──────────────────────────────── */
@@ -171,9 +172,9 @@ html, body {
   right: 0;
   bottom: calc(-1 * var(--safe-bot));
   display: flex;
-  height: calc(64px + var(--safe-bot));
-  min-height: calc(64px + var(--safe-bot));
-  max-height: calc(64px + var(--safe-bot));
+  height: calc(var(--nav-h) + var(--safe-bot));
+  min-height: calc(var(--nav-h) + var(--safe-bot));
+  max-height: calc(var(--nav-h) + var(--safe-bot));
   background: var(--surface);
   border-top: 1px solid var(--border);
   padding-bottom: 0;
@@ -186,8 +187,8 @@ html, body {
   align-items: center; justify-content: flex-end;
   height: 100%;
   min-height: 0;
-  padding: 6px 8px 8px;
-  gap: 4px;
+  padding: 4px 8px 5px;
+  gap: 2px;
   background: none; border: none;
   color: var(--text-dim);
   cursor: pointer;
@@ -206,8 +207,8 @@ html, body {
 .nav-item:active { background: var(--card); }
 
 .nav-icon {
-  width: 23px;
-  height: 23px;
+  width: 21px;
+  height: 21px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -216,8 +217,8 @@ html, body {
 }
 
 .nav-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
   display: block;
   fill: none;
   stroke: currentColor;
