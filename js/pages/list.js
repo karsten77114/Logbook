@@ -13,6 +13,7 @@ import { fmtDate, fmtDuration }                      from '../utils/time.js'
 import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
 import { navigate, showToast }                       from '../app.js'
 import { showCountryPicker, getCountryName }         from '../data/countries.js'
+import { navIcon }                                   from '../ui/nav-icons.js'
 
 // ── Module-level state ────────────────────────
 let _section    = 'flights'  // flights | crew | airplanes | experience
@@ -108,17 +109,17 @@ function buildShell() {
 // ── Bottom nav ────────────────────────────────
 function bottomNav() {
   const items = [
-    { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
-    { id: 'list',      icon: '✈', label: 'Flights'   },
-    { id: 'roster',    icon: '📅', label: 'Roster'    },
-    { id: 'settings',  icon: '⚙', label: 'Settings'  },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'list',      label: 'Flights'   },
+    { id: 'roster',    label: 'Roster'    },
+    { id: 'settings',  label: 'Settings'  },
   ]
   return `
     <nav class="bottom-nav">
       ${items.map(i => `
         <button class="nav-item ${i.id === 'list' ? 'active' : ''}"
                 data-nav="${i.id}">
-          <span class="nav-icon">${i.icon}</span>
+          <span class="nav-icon">${navIcon(i.id)}</span>
           <span>${i.label}</span>
         </button>`).join('')}
     </nav>`

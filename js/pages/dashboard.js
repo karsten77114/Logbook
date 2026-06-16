@@ -7,6 +7,7 @@ import { fmtDuration }                  from '../utils/time.js'
 import { navigate, showToast }          from '../app.js'
 import { AIRLINES, getAirlineLogoUrl,
          getAirlineByIata }             from '../data/airlines.js'
+import { navIcon }                      from '../ui/nav-icons.js'
 
 const FTD_REGS = new Set(['T12-FTD-01', 'T12-FTD-02'])
 
@@ -43,17 +44,17 @@ function buildShell() {
 
 function bottomNav() {
   const items = [
-    { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
-    { id: 'list',      icon: '✈', label: 'Flights'   },
-    { id: 'roster',    icon: '📅', label: 'Roster'    },
-    { id: 'settings',  icon: '⚙', label: 'Settings'  },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'list',      label: 'Flights'   },
+    { id: 'roster',    label: 'Roster'    },
+    { id: 'settings',  label: 'Settings'  },
   ]
   return `
     <nav class="bottom-nav">
       ${items.map(i => `
         <button class="nav-item ${i.id === 'dashboard' ? 'active' : ''}"
                 data-nav="${i.id}">
-          <span class="nav-icon">${i.icon}</span>
+          <span class="nav-icon">${navIcon(i.id)}</span>
           <span>${i.label}</span>
         </button>`).join('')}
     </nav>`

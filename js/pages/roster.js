@@ -6,6 +6,7 @@ import { getFirestore }          from 'firebase/firestore'
 import { getFirebaseApp }        from '../auth.js'
 import { state }                 from '../state.js'
 import { navigate, showToast }   from '../app.js'
+import { navIcon }               from '../ui/nav-icons.js'
 
 export const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
 const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
@@ -404,16 +405,16 @@ function renderCalendar(scrollEl) {
 // ── Bottom nav ────────────────────────────────
 function bottomNav() {
   const items = [
-    { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
-    { id: 'list',      icon: '✈', label: 'Flights'   },
-    { id: 'roster',    icon: '📅', label: 'Roster'    },
-    { id: 'settings',  icon: '⚙', label: 'Settings'  },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'list',      label: 'Flights'   },
+    { id: 'roster',    label: 'Roster'    },
+    { id: 'settings',  label: 'Settings'  },
   ]
   return `
     <nav class="bottom-nav">
       ${items.map(i => `
         <button class="nav-item ${i.id === 'roster' ? 'active' : ''}" data-nav="${i.id}">
-          <span class="nav-icon">${i.icon}</span>
+          <span class="nav-icon">${navIcon(i.id)}</span>
           <span>${i.label}</span>
         </button>`).join('')}
     </nav>`

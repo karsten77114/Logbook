@@ -6,6 +6,7 @@ import { getProfile, saveProfile,
 import { logout }                              from '../auth.js'
 import { state, setProfile }                   from '../state.js'
 import { navigate, showToast }                 from '../app.js'
+import { navIcon }                             from '../ui/nav-icons.js'
 
 export async function renderSettings(root) {
   root.innerHTML = buildShell()
@@ -28,16 +29,16 @@ function buildShell() {
 
       <nav class="bottom-nav">
         <button class="nav-item" data-nav="dashboard">
-          <span class="nav-icon">⊞</span><span>Dashboard</span>
+          <span class="nav-icon">${navIcon('dashboard')}</span><span>Dashboard</span>
         </button>
         <button class="nav-item" data-nav="list">
-          <span class="nav-icon">✈</span><span>Flights</span>
+          <span class="nav-icon">${navIcon('list')}</span><span>Flights</span>
         </button>
         <button class="nav-item" data-nav="roster">
-          <span class="nav-icon">📅</span><span>Roster</span>
+          <span class="nav-icon">${navIcon('roster')}</span><span>Roster</span>
         </button>
         <button class="nav-item active" data-nav="settings">
-          <span class="nav-icon">⚙</span><span>Settings</span>
+          <span class="nav-icon">${navIcon('settings')}</span><span>Settings</span>
         </button>
       </nav>
     </div>`
