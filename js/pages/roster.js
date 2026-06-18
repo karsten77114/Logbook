@@ -15,6 +15,35 @@ const WDAYS       = ['日','一','二','三','四','五','六']
 const STYLE_ID    = 'roster-cal-v3'
 const ROSTER_TIMEOUT_MS = 15000
 
+// ── Roster 快取（localStorage）────────────────
+const _RC_KEY = 'lb_roster_v1'
+const _RC_TTL = 45 * 60 * 1000  // 45 分鐘
+
+function _rcGet(uid) {
+  try {
+    const c = JSON.parse(localStorage.getItem(_RC_KEY) || 'null')
+    if (!c || c.uid !== uid || Date.now() - c.t > _RC_TTL) return null
+    return c.pairings
+  } catch { return null }
+}
+
+function _rcSet(uid, pairings) {
+  try {
+    localStorage.setItem(_RC_KEY, JSON.stringify({ uid, pairings, t: Date.now() }))
+  } catch {}
+}
+
+/** 靜默暖機：App 開啟 / 回前台時呼叫，確保快取是新鮮的 */
+export async function warmRosterCache(uid) {
+  if (_rcGet(uid)) return            // 快取還新鮮，不重抓
+  const creds = await getPegasysCreds(uid).catch(() => null)
+  if (!creds?.employeeId || !creds?.password) return
+  try {
+    const r = await fetchRoster(creds.employeeId, creds.password)
+    if (r.pairings?.length) _rcSet(uid, r.pairings)
+  } catch {}                         // 靜默失敗，不影響主流程
+}
+
 // ── CSS 注入（版本號防重複）─────────────────────
 function _injectStyles() {
   document.getElementById('roster-cal-v1')?.remove()  // 清除舊版
@@ -160,12 +189,20 @@ export async function getLatestUnloggedLeg(uid) {
   const creds = await getPegasysCreds(uid)
   if (!creds?.employeeId || !creds?.password) return null
 
-  let pairings
-  try {
-    const result = await fetchRoster(creds.employeeId, creds.password)
-    pairings = result.pairings
-    if (!Array.isArray(pairings) || !pairings.length || !pairings[0]?.date) return null
-  } catch { return null }
+  // 快取命中 → 立即回傳，同時在背景更新
+  let pairings = _rcGet(uid)
+  if (pairings) {
+    fetchRoster(creds.employeeId, creds.password)
+      .then(r => { if (r.pairings?.length) _rcSet(uid, r.pairings) })
+      .catch(() => {})
+  } else {
+    try {
+      const result = await fetchRoster(creds.employeeId, creds.password)
+      pairings = result.pairings
+      if (pairings?.length) _rcSet(uid, pairings)
+    } catch { return null }
+  }
+  if (!Array.isArray(pairings) || !pairings.length || !pairings[0]?.date) return null
 
   await loadLoggedFlights(uid, pairings)
 

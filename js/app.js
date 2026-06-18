@@ -17,7 +17,8 @@ import { renderList }            from './pages/list.js'
 import { renderAdd }             from './pages/add.js'
 import { renderDetail }          from './pages/detail.js'
 import { renderSettings }        from './pages/settings.js'
-import { renderRoster }          from './pages/roster.js'
+import { renderRoster,
+         warmRosterCache }        from './pages/roster.js'
 import { renderCrewDetail }      from './pages/crew-detail.js'
 import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
@@ -76,7 +77,17 @@ async function loadUserData(uid) {
   if (crew)             setCrew(crew)
   if (aircraftSettings) setAircraftSettings(aircraftSettings)
   setCustomAircraft(customAircraft)
+
+  // 靜默暖機 Roster 快取（不等待，不阻塞登入流程）
+  warmRosterCache(uid).catch(() => {})
 }
+
+// App 回到前台時補刷 Roster 快取
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.user?.uid) {
+    warmRosterCache(state.user.uid).catch(() => {})
+  }
+})
 
 // ── Router ────────────────────────────────────
 
