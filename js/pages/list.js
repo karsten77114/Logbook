@@ -191,13 +191,22 @@ function renderSection(root) {
   const topAdd   = root.querySelector('#hub-top-add')
 
   const isFlights = _section === 'flights'
+  const isCrewSec = _section === 'crew'
   if (statsEl)  statsEl.style.display  = isFlights ? '' : 'none'
-  if (searchEl) searchEl.style.display = isFlights ? '' : 'none'
+  if (searchEl) searchEl.style.display = (isFlights || isCrewSec) ? '' : 'none'
   if (fab)      fab.style.display      = isFlights ? '' : 'none'
   if (topAdd) {
     const showBtn = !isFlights
     topAdd.style.visibility   = showBtn ? 'visible' : 'hidden'
     topAdd.style.pointerEvents = showBtn ? '' : 'none'
+  }
+
+  // Update search placeholder & clear when switching between non-search sections
+  const searchInput = root.querySelector('#search-input')
+  if (searchInput) {
+    if (isFlights)      searchInput.placeholder = 'Flight, airport, crew…'
+    else if (isCrewSec) searchInput.placeholder = 'Name, position…'
+    if (!isFlights && !isCrewSec) { searchInput.value = ''; state.search = '' }
   }
 
   // Route to section renderer
@@ -395,13 +404,36 @@ function renderCrewSection(root) {
       showToast('Added', 'success')
     })
   }
+  _attachCrewSearch(root)
   _paintCrewList(root)
+}
+
+function _attachCrewSearch(root) {
+  const inp = root.querySelector('#search-input')
+  if (!inp || inp.dataset.crewBound) return
+  inp.dataset.crewBound = '1'
+  let timer
+  inp.addEventListener('input', e => {
+    if (_section !== 'crew') return
+    clearTimeout(timer)
+    state.search = e.target.value
+    timer = setTimeout(() => _paintCrewList(root), 200)
+  })
 }
 
 function _paintCrewList(root) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
-  const crew = state.crew || []
+  const q = (state.search || '').toLowerCase().trim()
+  let crew = state.crew || []
+
+  if (q) {
+    crew = crew.filter(c =>
+      `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().includes(q) ||
+      (c.position    || '').toLowerCase().includes(q) ||
+      (c.employeeId  || '').toLowerCase().includes(q)
+    )
+  }
 
   const active   = crew.filter(c => isCrewActive(c))
   const inactive = crew.filter(c => !isCrewActive(c))
@@ -410,8 +442,8 @@ function _paintCrewList(root) {
     scroll.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">👥</div>
-        <div class="empty-state-title">No crew yet</div>
-        <div class="empty-state-sub">Tap ＋ to add</div>
+        <div class="empty-state-title">${q ? 'No matching crew' : 'No crew yet'}</div>
+        <div class="empty-state-sub">${q ? 'Try another keyword' : 'Tap ＋ to add'}</div>
       </div>`
     return
   }
@@ -692,7 +724,23 @@ function _paintAirplaneList(root) {
        </div>`
     : ''
 
-  scroll.innerHTML = Object.entries(byType).map(([type, planes]) => `
+  // Sort: type groups with ≥1 active aircraft float to top, then alphabetical
+  const sortedTypes = Object.entries(byType).sort(([tA, psA], [tB, psB]) => {
+    const aA = psA.some(p => isAircraftActive(p.reg))
+    const aB = psB.some(p => isAircraftActive(p.reg))
+    if (aA !== aB) return aA ? -1 : 1
+    return tA.localeCompare(tB)
+  })
+  // Within each type group, active aircraft before inactive
+  sortedTypes.forEach(([, planes]) =>
+    planes.sort((a, b) => {
+      const da = isAircraftActive(a.reg), db = isAircraftActive(b.reg)
+      if (da !== db) return da ? -1 : 1
+      return a.reg.localeCompare(b.reg)
+    })
+  )
+
+  scroll.innerHTML = sortedTypes.map(([type, planes]) => `
     <div class="hub-section-label">${type}</div>
     <div class="hub-list">
       ${planes.map(p => airplaneRowHtml(p)).join('')}
