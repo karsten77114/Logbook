@@ -617,6 +617,18 @@ async function autoDetectRunway(root, track, destIata, flightId) {
   }
 }
 
+// ── Runway pre-fetch for Add Flight (no DOM, no Firestore) ──────────
+/**
+ * Add Flight 選航班時立即背景查跑道，回傳跑道字串或 null。
+ * 只需 fn/date/reg/from/to，不需要 OOOI 時間。
+ */
+export async function fetchRunwayForFlight({ fn, date, reg, from, to }) {
+  if (!reg || !date) return null
+  const track = await fetchTrackFR24(reg, date, from, to, fn)
+  if (!track?.length) return null
+  return detectRunway(track, to) ?? null
+}
+
 // ── Background Track Fetch (callable from add.js) ─────────────────
 /**
  * 儲存航班後在背景自動抓取 ADS-B track 並存回 Firestore。

@@ -253,10 +253,11 @@ export async function getRecentLegsForPicker(uid) {
 
   const today  = todayStr()
   const cutoff = _daysAgo(7)
-  const ahead  = _daysAhead(3)
+  // UTC+8 HHMM — STARLUX 航班以台灣時區為基準判斷是否已起飛
+  const nowHhmm = new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16).replace(':', '')
 
   const legs = pairings
-    .filter(p => p.date >= cutoff && p.date <= ahead)
+    .filter(p => p.date >= cutoff && p.date <= today)  // 只看過去 7 天 + 今天（不含未來）
     .flatMap(p => (p.legs || []).map(lg => ({
       flightNumber: lg.flightNumber,
       dateDs:       p.date,
@@ -267,15 +268,16 @@ export async function getRecentLegsForPicker(uid) {
       blockTime:    lg.blockTime || 0,
       logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
     })))
+    .filter(leg => {
+      if (leg.logged) return false                       // 已記錄 → 不顯示
+      if (leg.dateDs < today) return true                // 過去日期 → 一定已起飛
+      // 今天：表訂起飛 (UTC+8) 已過才顯示
+      const std = (leg.stdLocal || '').replace(':', '')
+      return !std || std <= nowHhmm
+    })
 
-  // 過去：由新到舊（最近未記錄航班在最上面）；未來：由近到遠
-  return legs.sort((a, b) => {
-    const aFut = a.dateDs > today, bFut = b.dateDs > today
-    if (aFut !== bFut) return aFut ? 1 : -1
-    return aFut
-      ? a.dateDs.localeCompare(b.dateDs)
-      : b.dateDs.localeCompare(a.dateDs)
-  })
+  // 最近未記錄航班在最上面（只有過去航班，直接由新到舊）
+  return legs.sort((a, b) => b.dateDs.localeCompare(a.dateDs))
 }
 
 // ── 月曆狀態 ──────────────────────────────────
@@ -519,7 +521,7 @@ function renderLoginForm(scroll, uid, onSuccess) {
         <div style="margin-bottom:14px">
           <label style="display:block;font-size:12px;color:var(--color-text-secondary);margin-bottom:6px">員工編號</label>
           <input id="pg-uid" type="text" inputmode="numeric" autocomplete="username"
-                 placeholder="2317073" maxlength="10"
+                 placeholder="員工編號" maxlength="10"
                  style="width:160px;padding:10px 12px;border:1px solid var(--border-subtle);
                         border-radius:8px;background:var(--color-bg);color:var(--color-text);
                         font-size:15px">
@@ -642,7 +644,7 @@ export async function renderRoster(root) {
   credBtn.addEventListener('click', () => {
     renderLoginForm(scroll, uid, (employeeId, password) => {
       _pairings = []
-      doFetch(scroll, refreshBtn, uid, employeeId, password)
+      doFetch(scroll, refreshBtn, uid, employeeId, password, true)
     })
   })
 
@@ -652,7 +654,7 @@ export async function renderRoster(root) {
 
   if (!creds?.employeeId || !creds?.password) {
     renderLoginForm(scroll, uid, (employeeId, password) => {
-      doFetch(scroll, refreshBtn, uid, employeeId, password)
+      doFetch(scroll, refreshBtn, uid, employeeId, password, true)
     })
     return
   }
@@ -662,14 +664,36 @@ export async function renderRoster(root) {
 
   refreshBtn.addEventListener('click', async () => {
     const c = await getPegasysCreds(uid)
-    if (c?.employeeId) doFetch(scroll, refreshBtn, uid, c.employeeId, c.password)
+    if (c?.employeeId) doFetch(scroll, refreshBtn, uid, c.employeeId, c.password, true)
   })
 }
 
 let _fetching = false
 
-async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
+async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefresh = false) {
   if (_fetching) return
+
+  // Cache-first: render immediately from localStorage when not forcing a refresh
+  if (!forceRefresh) {
+    const cached = _rcGet(uid)
+    if (cached) {
+      _pairings = cached
+      await loadLoggedFlights(uid, cached)
+      const today = todayStr()
+      const upcoming = cached.filter(p => p.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+      if (upcoming.length > 0) {
+        _calYear  = parseInt(upcoming[0].date.slice(0, 4))
+        _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
+      } else {
+        _calYear  = new Date().getFullYear()
+        _calMonth = new Date().getMonth()
+      }
+      _selected = cached.some(p => p.date === today) ? today : null
+      renderCalendar(scroll)
+      return
+    }
+  }
+
   _fetching = true
   refreshBtn.disabled = true
   refreshBtn.textContent = '…'
@@ -689,6 +713,7 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
 
     if (isReal) {
       _pairings = pairings
+      _rcSet(uid, pairings)   // 更新 localStorage 快取
 
       // 查詢 Logbook：過去航班是否已記錄
       await loadLoggedFlights(uid, pairings)
@@ -741,7 +766,7 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
     if (e.status === 401) {
       await clearPegasysCreds(uid)
       showToast('❌ 帳號或密碼已失效，請重新登入')
-      renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw))
+      renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw, true))
     } else {
       const isTimeout = e.name === 'AbortError'
       const message = isTimeout
@@ -751,8 +776,8 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password) {
       renderRosterError(scroll, {
         title: isTimeout ? '班表讀取逾時' : '班表讀取失敗',
         message,
-      }, () => doFetch(scroll, refreshBtn, uid, employeeId, password), () => {
-        renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw))
+      }, () => doFetch(scroll, refreshBtn, uid, employeeId, password, true), () => {
+        renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw, true))
       })
     }
   } finally {

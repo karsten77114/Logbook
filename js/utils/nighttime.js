@@ -33,22 +33,22 @@ export function calcNightTime(date, offTime, onTime, fromIATA, toIATA) {
   const totalMin = (onUtc - offUtc) / 60000
   if (totalMin <= 0) return 0
 
-  // 取中點座標（簡化：用起降機場平均）
-  const coords = fromCoords && toCoords
-    ? [(fromCoords[0]+toCoords[0])/2, (fromCoords[1]+toCoords[1])/2]
-    : (fromCoords || toCoords)
-
-  // 在每一分鐘取樣，判斷是否為夜間
-  // 效能優化：每 5 分鐘取樣一次
+  // 每 5 分鐘取樣，沿大圓線性插值位置（比固定中點更準確，尤其對長途航班）
   const SAMPLE = 5
   let nightSamples = 0
   let totalSamples = 0
+  const duration = onUtc - offUtc
 
   for (let ms = offUtc; ms < onUtc; ms += SAMPLE * 60000) {
-    const times = SunCalc.getTimes(new Date(ms), coords[0], coords[1])
-    // 航空業界定義：夜間 = 民用晨昏蒙影之外（太陽在地平線下 6 度，dawn/dusk）
-    // 而非單純日出日落（sunrise/sunset，地平線下 0.833 度）
-    // 前者範圍較窄，符合 ICAO/FAA night time 定義
+    const progress = duration > 0 ? (ms - offUtc) / duration : 0
+    const lat = fromCoords && toCoords
+      ? fromCoords[0] + progress * (toCoords[0] - fromCoords[0])
+      : (fromCoords || toCoords)[0]
+    const lon = fromCoords && toCoords
+      ? fromCoords[1] + progress * (toCoords[1] - fromCoords[1])
+      : (fromCoords || toCoords)[1]
+    const times = SunCalc.getTimes(new Date(ms), lat, lon)
+    // 航空業界定義：夜間 = 民用晨昏蒙影之外（dawn/dusk，太陽在地平線下 6 度）
     const isNight = new Date(ms) < times.dawn || new Date(ms) > times.dusk
     if (isNight) nightSamples++
     totalSamples++

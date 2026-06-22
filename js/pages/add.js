@@ -7,7 +7,8 @@ import { addFlight, saveCrew,
 import { state, setCustomAircraft } from '../state.js'
 import { navigate, showToast }     from '../app.js'
 import { invalidateStats }                from './list.js'
-import { backgroundFetchAndSaveTrack }   from './detail.js'
+import { backgroundFetchAndSaveTrack,
+         fetchRunwayForFlight }           from './detail.js'
 import { diffMin, normalizeHm,
          isValidHm, todayUTC }     from '../utils/time.js'
 import { calcNightTime }           from '../utils/nighttime.js'
@@ -193,6 +194,23 @@ export function renderAdd(root) {
       }
       const typeEl = root.querySelector('#f-type-display')
       if (typeEl) typeEl.textContent = type || '—'
+
+      // 背景查落地跑道（過去航班才有 ADS-B track）
+      const _from = form.from || root.querySelector('#f-from')?.value || ''
+      const _to   = form.to   || root.querySelector('#f-to')?.value   || ''
+      if (date <= todayUTC() && _from && _to) {
+        fetchRunwayForFlight({ fn, date, reg, from: _from, to: _to })
+          .then(runway => {
+            if (!runway) return
+            form.runway = runway
+            const rwEl = root.querySelector('#f-runway')
+            if (rwEl && !rwEl.value) {
+              rwEl.value = runway
+              showToast(`Runway ${runway} auto-detected`, 'success')
+            }
+          })
+          .catch(() => {})
+      }
     } catch (_) {}
   }
 
