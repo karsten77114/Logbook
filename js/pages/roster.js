@@ -285,6 +285,27 @@ let _calYear  = new Date().getFullYear()
 let _calMonth = new Date().getMonth()   // 0-indexed
 let _pairings = []
 let _selected = null                    // 'YYYYMMDD'
+let _myEmployeeId = ''                  // 用來在組員名單中標示自己
+
+// ── 駕駛艙組員渲染 ────────────────────────────
+function _crewHtml(crew) {
+  const COCKPIT_RANKS = ['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO']
+  const show = (crew || []).filter(c => COCKPIT_RANKS.includes(c.rank))
+  if (!show.length) return ''
+  const rankLabel = { CAP: 'Captain', FO: 'F/O', TFO: 'T/FO', SO: 'S/O', SFO: 'Sr F/O', PFO: 'Pr F/O' }
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle)">
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px;font-weight:600;letter-spacing:.5px">COCKPIT CREW</div>
+    ${show.map(c => {
+      const isMe  = c.staffId && c.staffId === _myEmployeeId
+      const label = rankLabel[c.rank] || c.rank
+      const name  = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.staffId || '—'
+      return `<div style="display:flex;gap:10px;align-items:center;padding:4px 0">
+        <span style="width:60px;font-size:11px;color:var(--color-text-secondary);font-weight:600;flex-shrink:0">${label}</span>
+        <span style="font-size:13px;${isMe ? 'color:var(--color-primary);font-weight:700' : ''}">${name}${isMe ? ' ★' : ''}</span>
+      </div>`
+    }).join('')}
+  </div>`
+}
 
 // ── loadLoggedFlights 快取狀態 ────────────────
 let _loggedFlightsTs  = 0     // 上次查詢時間（ms）
@@ -423,6 +444,7 @@ function renderCalendar(scrollEl) {
               </div>` : ''}
           </div>
           ${rows || `<div style="font-size:13px;color:var(--color-text-secondary);padding:6px 0">無飛行任務</div>`}
+          ${_crewHtml(p.crew)}
           ${isFuture && legs.length > 0 ? `
             <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;
                         padding-top:8px">KneeBoard 僅執勤當天開放</div>` : ''}
@@ -678,6 +700,7 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
     const cached = _rcGet(uid)
     if (cached) {
       _pairings = cached
+      _myEmployeeId = employeeId
       await loadLoggedFlights(uid, cached)
       const today = todayStr()
       const upcoming = cached.filter(p => p.date >= today).sort((a, b) => a.date.localeCompare(b.date))
@@ -713,7 +736,8 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
 
     if (isReal) {
       _pairings = pairings
-      _rcSet(uid, pairings)   // 更新 localStorage 快取
+      _rcSet(uid, pairings)          // 更新 localStorage 快取
+      _myEmployeeId = employeeId     // 用於組員名單標示自己
 
       // 查詢 Logbook：過去航班是否已記錄
       await loadLoggedFlights(uid, pairings)
