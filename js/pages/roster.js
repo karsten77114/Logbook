@@ -729,6 +729,12 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
 
   try {
     const result   = await fetchRoster(employeeId, password)
+    // 臨時 debug：印出 PegaSys raw 結構以確認 crew 欄位位置（確認後移除）
+    console.log('[PegaSys debug] msgNames:', result.msgNames)
+    console.log('[PegaSys debug] firstDAKeys:', result._debug_firstDAKeys)
+    console.log('[PegaSys debug] firstDutyKeys:', result._debug_firstDutyKeys)
+    console.log('[PegaSys debug] crewCandidates:', JSON.stringify(result._debug_crewCandidates))
+    console.log('[PegaSys debug] activity[0]:', JSON.stringify(result._debug_activities?.[0]).slice(0, 2000))
     const pairings = result.pairings
     const isReal   = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
     const isDebug  = !Array.isArray(pairings) && pairings?._debug === true
