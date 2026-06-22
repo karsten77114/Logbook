@@ -20,7 +20,7 @@ import { isAircraftActive,
          isCrewActive }            from '../state.js'
 import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
-import { getLatestUnloggedLeg,
+import { getRecentLegsForPicker,
          WORKER_URL }               from './roster.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
@@ -359,26 +359,66 @@ export function renderAdd(root) {
     if (slot > 0) renderCrewSlots(root, crewSlots)
   }
 
-  // ── 直接點 + 新增（非經 Roster 補記錄按鈕）：自動帶入最新一筆尚未記錄的 leg ─
-  if (!prefill.flightNumber) {
-    const fnEl = root.querySelector('#f-fn')
-    // 先帶入公司代碼，使用者只需補班號數字；若後面 Roster 查到完整班號會覆蓋
-    const airlineIata = state.profile?.airlineIata
-    if (airlineIata && fnEl) fnEl.value = airlineIata
+  // 載入 Roster 選擇器（若已有 prefill 則隱藏）
+  _loadRosterPicker(root, form, prefill, tryAutoFillAircraft)
+}
 
-    getLatestUnloggedLeg(state.user.uid).then(leg => {
-      if (!leg || currentStep !== 0) return   // 使用者已翻到後面步驟就不打擾
-      const fromEl = root.querySelector('#f-from')
-      const toEl   = root.querySelector('#f-to')
-      const dateEl = root.querySelector('#f-date')
-      if (fnEl)                    { fnEl.value   = leg.flightNumber; form.flightNumber = leg.flightNumber }
-      if (fromEl && !fromEl.value) { fromEl.value = leg.from;          form.from         = leg.from }
-      if (toEl   && !toEl.value)   { toEl.value   = leg.to;            form.to           = leg.to }
-      if (dateEl && leg.date)      { dateEl.value = leg.date;          form.date         = leg.date }
-      showToast(`已從 Roster 帶入 ${leg.flightNumber}  ${leg.from} → ${leg.to}`, 'success')
-      tryAutoFillAircraft()
-    }).catch(() => {})
-  }
+// ── Roster Picker ─────────────────────────────
+
+const _RP_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+function _rpFmtDate(iso) {
+  const [, m, d] = iso.split('-')
+  return `${_RP_MON[parseInt(m,10)-1]} ${parseInt(d,10)}`
+}
+
+async function _loadRosterPicker(root, form, prefill, onPick) {
+  const section = root.querySelector('#rp-section')
+  const listEl  = root.querySelector('#rp-list')
+  if (!section || !listEl) return
+
+  // Came from Roster "補記錄" button — already prefilled, hide picker
+  if (prefill.flightNumber) { section.remove(); return }
+
+  let legs
+  try { legs = await getRecentLegsForPicker(state.user.uid) } catch {}
+
+  if (!legs?.length) { section.remove(); return }
+
+  listEl.innerHTML = legs.map(lg => `
+    <div class="rp-row${lg.logged ? ' rp-logged' : ''}"
+         data-fn="${lg.flightNumber}" data-date="${lg.dateIso}"
+         data-from="${lg.from}" data-to="${lg.to}">
+      <span class="rp-fn">${lg.flightNumber}</span>
+      <span class="rp-route">${lg.from}&nbsp;→&nbsp;${lg.to}</span>
+      <span class="rp-meta">${_rpFmtDate(lg.dateIso)}${lg.stdLocal ? ' · ' + lg.stdLocal + 'L' : ''}</span>
+      ${lg.logged ? '<span class="rp-check">✓</span>' : ''}
+    </div>`).join('')
+
+  listEl.querySelectorAll('.rp-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const fn   = row.dataset.fn
+      const date = row.dataset.date
+      const from = row.dataset.from
+      const to   = row.dataset.to
+
+      form.flightNumber = fn
+      form.date         = date
+      form.from         = from
+      form.to           = to
+
+      const q = s => root.querySelector(s)
+      const el = q('#f-fn'); if (el) el.value = fn
+      const ed = q('#f-date'); if (ed) ed.value = date
+      const ef = q('#f-from'); if (ef) ef.value = from
+      const et = q('#f-to');   if (et) et.value = to
+
+      // Highlight selected row
+      listEl.querySelectorAll('.rp-row').forEach(r => r.classList.remove('rp-selected'))
+      row.classList.add('rp-selected')
+
+      onPick()  // trigger aircraft lookup
+    })
+  })
 }
 
 // ── Sheet ─────────────────────────────────────
@@ -639,6 +679,13 @@ function step1Html(form) {
       <div class="step-head">
         <div class="step-num">01 / 05</div>
         <div class="step-title">Route</div>
+      </div>
+
+      <div id="rp-section" class="rp-section">
+        <div class="rp-header">Roster Flights</div>
+        <div id="rp-list" class="rp-list">
+          <div class="rp-loading"><div class="loader" style="width:18px;height:18px;border-width:2px"></div></div>
+        </div>
       </div>
 
       <div class="input-row">

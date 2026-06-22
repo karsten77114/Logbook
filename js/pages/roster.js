@@ -119,6 +119,11 @@ function _daysAgo(n) {
   const d = new Date(); d.setDate(d.getDate() - n)
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
 }
+// n 天後的 YYYYMMDD 字串
+function _daysAhead(n) {
+  const d = new Date(); d.setDate(d.getDate() + n)
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+}
 
 // ── Worker fetch ──────────────────────────────
 async function fetchRoster(employeeId, password) {
@@ -227,6 +232,50 @@ export async function getLatestUnloggedLeg(uid) {
     }
   }
   return null
+}
+
+/** Add Flight Step 1 選擇器：取得最近 7 天 + 未來 3 天的所有 legs，含已記錄狀態 */
+export async function getRecentLegsForPicker(uid) {
+  const creds = await getPegasysCreds(uid).catch(() => null)
+  if (!creds?.employeeId || !creds?.password) return null
+
+  let pairings = _rcGet(uid)
+  if (!pairings) {
+    try {
+      const r = await fetchRoster(creds.employeeId, creds.password)
+      pairings = r.pairings
+      if (pairings?.length) _rcSet(uid, pairings)
+    } catch { return null }
+  }
+  if (!Array.isArray(pairings) || !pairings.length) return null
+
+  await loadLoggedFlights(uid, pairings)
+
+  const today  = todayStr()
+  const cutoff = _daysAgo(7)
+  const ahead  = _daysAhead(3)
+
+  const legs = pairings
+    .filter(p => p.date >= cutoff && p.date <= ahead)
+    .flatMap(p => (p.legs || []).map(lg => ({
+      flightNumber: lg.flightNumber,
+      dateDs:       p.date,
+      dateIso:      _dsToIso(p.date),
+      from:         lg.dep,
+      to:           lg.dest,
+      stdLocal:     lg.std_local || '',
+      blockTime:    lg.blockTime || 0,
+      logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
+    })))
+
+  // 過去：由新到舊（最近未記錄航班在最上面）；未來：由近到遠
+  return legs.sort((a, b) => {
+    const aFut = a.dateDs > today, bFut = b.dateDs > today
+    if (aFut !== bFut) return aFut ? 1 : -1
+    return aFut
+      ? a.dateDs.localeCompare(b.dateDs)
+      : b.dateDs.localeCompare(a.dateDs)
+  })
 }
 
 // ── 月曆狀態 ──────────────────────────────────

@@ -2423,3 +2423,70 @@ html, body {
   font-size: 15px;
   color: var(--text);
 }
+
+/* ── Roster Picker (Add Flight Step 1) ──────── */
+.rp-section {
+  margin-bottom: 10px;
+}
+.rp-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0 2px 6px;
+}
+.rp-list {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.rp-loading {
+  display: flex;
+  justify-content: center;
+  padding: 14px;
+}
+.rp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.rp-row:last-child { border-bottom: none; }
+.rp-row:active     { background: var(--card); }
+.rp-row.rp-selected {
+  background: var(--card);
+  border-left: 3px solid var(--accent);
+  padding-left: 11px;
+}
+.rp-row.rp-logged  { opacity: 0.45; }
+.rp-fn {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 54px;
+  flex-shrink: 0;
+}
+.rp-route {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+.rp-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rp-check {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  flex-shrink: 0;
+}
