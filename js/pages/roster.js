@@ -734,7 +734,18 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
     console.log('[PegaSys debug] firstDAKeys:', result._debug_firstDAKeys)
     console.log('[PegaSys debug] firstDutyKeys:', result._debug_firstDutyKeys)
     console.log('[PegaSys debug] crewCandidates:', JSON.stringify(result._debug_crewCandidates))
+    console.log('[PegaSys debug] crewPhase:', JSON.stringify(result._debug_crewPhase))
+    console.log('[PegaSys debug] crewRaw:', result._debug_crewRaw)
     console.log('[PegaSys debug] activity[0]:', JSON.stringify(result._debug_activities?.[0]).slice(0, 2000))
+    // 臨時：把 crew 原始回應寫進 localStorage 供跨分頁讀取（確認後移除）
+    try {
+      localStorage.setItem('lb_crew_debug', JSON.stringify({
+        ts: new Date().toISOString(),
+        phase: result._debug_crewPhase,
+        raw: result._debug_crewRaw,
+        candidates: result._debug_crewCandidates,
+      }))
+    } catch (_) {}
     const pairings = result.pairings
     const isReal   = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
     const isDebug  = !Array.isArray(pairings) && pairings?._debug === true
