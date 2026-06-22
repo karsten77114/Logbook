@@ -378,7 +378,23 @@ export function renderAdd(root) {
   }
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
-  _loadRosterPicker(root, form, prefill, tryAutoFillAircraft)
+  _loadRosterPicker(root, form, prefill, (rosterCrew) => {
+    tryAutoFillAircraft()
+    // 用 employeeId 比對 Crew List，自動填入駕駛艙組員
+    if (rosterCrew?.length && state.crew?.length) {
+      const cockpitRanks = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'CP', 'FI'])
+      const cockpit = rosterCrew.filter(c => cockpitRanks.has(c.rank))
+      let slot = 0
+      for (const rc of cockpit) {
+        if (slot >= crewSlots.length) break
+        const matched = state.crew.find(c => c.employeeId && c.employeeId === rc.staffId)
+        if (matched && !crewSlots.some(s => s?.id === matched.id)) {
+          crewSlots[slot++] = matched
+        }
+      }
+      if (slot > 0) renderCrewSlots(root, crewSlots)
+    }
+  })
 }
 
 // ── Roster Picker ─────────────────────────────
@@ -402,7 +418,11 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
 
   if (!legs?.length) { section.remove(); return }
 
-  listEl.innerHTML = legs.map(lg => `
+  // crew lookup by fn|date (crew is at pairing level, same for all legs)
+  const crewByKey = new Map()
+  listEl.innerHTML = legs.map(lg => {
+    crewByKey.set(`${lg.flightNumber}|${lg.dateIso}`, lg.crew || [])
+    return `
     <div class="rp-row${lg.logged ? ' rp-logged' : ''}"
          data-fn="${lg.flightNumber}" data-date="${lg.dateIso}"
          data-from="${lg.from}" data-to="${lg.to}">
@@ -410,7 +430,8 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
       <span class="rp-route">${lg.from}&nbsp;→&nbsp;${lg.to}</span>
       <span class="rp-meta">${_rpFmtDate(lg.dateIso)}${lg.stdLocal ? ' · ' + lg.stdLocal + 'L' : ''}</span>
       ${lg.logged ? '<span class="rp-check">✓</span>' : ''}
-    </div>`).join('')
+    </div>`
+  }).join('')
 
   listEl.querySelectorAll('.rp-row').forEach(row => {
     row.addEventListener('click', () => {
@@ -434,7 +455,7 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
       listEl.querySelectorAll('.rp-row').forEach(r => r.classList.remove('rp-selected'))
       row.classList.add('rp-selected')
 
-      onPick()  // trigger aircraft lookup
+      onPick(crewByKey.get(`${fn}|${date}`) || [])  // pass roster crew to callback
     })
   })
 }

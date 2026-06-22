@@ -266,6 +266,7 @@ export async function getRecentLegsForPicker(uid) {
       to:           lg.dest,
       stdLocal:     lg.std_local || '',
       blockTime:    lg.blockTime || 0,
+      crew:         p.crew || [],
       logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
     })))
     .filter(leg => {
@@ -292,15 +293,13 @@ function _crewHtml(crew) {
   const COCKPIT_RANKS = ['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO']
   const show = (crew || []).filter(c => COCKPIT_RANKS.includes(c.rank))
   if (!show.length) return ''
-  const rankLabel = { CAP: 'Captain', FO: 'F/O', TFO: 'T/FO', SO: 'S/O', SFO: 'Sr F/O', PFO: 'Pr F/O' }
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle)">
     <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px;font-weight:600;letter-spacing:.5px">COCKPIT CREW</div>
     ${show.map(c => {
       const isMe  = c.staffId && c.staffId === _myEmployeeId
-      const label = rankLabel[c.rank] || c.rank
       const name  = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.staffId || '—'
       return `<div style="display:flex;gap:10px;align-items:center;padding:4px 0">
-        <span style="width:60px;font-size:11px;color:var(--color-text-secondary);font-weight:600;flex-shrink:0">${label}</span>
+        <span style="width:52px;font-size:11px;color:var(--color-text-secondary);font-weight:600;flex-shrink:0">${c.rank}</span>
         <span style="font-size:13px;${isMe ? 'color:var(--color-primary);font-weight:700' : ''}">${name}${isMe ? ' ★' : ''}</span>
       </div>`
     }).join('')}
