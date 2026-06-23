@@ -28,6 +28,37 @@ const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
 const CREW_ROLES  = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 const TOTAL       = 5
 
+// 判斷 roster crew 成員是否「在線駕駛艙」(operating cockpit)：
+//   新版 PegaSys 來源(leg.cockpit) 已預先篩選；bookmarklet 來源為完整名單需自行過濾
+const _COCKPIT_RANKS = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'TCAP', 'CP', 'FI'])
+function _isCockpitCrew(c) {
+  if (c.workCode && c.workCode !== 'OPR') return false        // deadhead/OET 排除
+  if (typeof c.isCockpit === 'boolean') return c.isCockpit
+  if (/\bP1\b|\bP2\b|PIC/i.test(c.position || '')) return true // P1/P2/PIC = 駕駛艙
+  return _COCKPIT_RANKS.has(c.rank)
+}
+// PIC 排第一
+function _picFirst(a, b) {
+  const ap = (/PIC|P1/i.test(a.position || '') || a.rank === 'CAP' || a.rank === 'TCAP') ? 0 : 1
+  const bp = (/PIC|P1/i.test(b.position || '') || b.rank === 'CAP' || b.rank === 'TCAP') ? 0 : 1
+  return ap - bp
+}
+
+// 用 employeeId(staffId) 比對 Crew List，把在線駕駛艙組員(PIC 第一)填入 crewSlots
+function _autofillCockpit(rosterCrew, crewSlots, root, renderCrewSlots) {
+  if (!rosterCrew?.length || !state.crew?.length) return
+  const cockpit = rosterCrew.filter(_isCockpitCrew).sort(_picFirst)
+  let slot = 0
+  for (const rc of cockpit) {
+    if (slot >= crewSlots.length) break
+    const matched = state.crew.find(c => c.employeeId && c.employeeId === rc.staffId)
+    if (matched && !crewSlots.some(s => s?.id === matched.id)) {
+      crewSlots[slot++] = matched
+    }
+  }
+  if (slot > 0) renderCrewSlots(root, crewSlots)
+}
+
 // ── Custom Aircraft helpers ────────────────────
 function getCustomAircraft() {
   return state.customAircraft || []
@@ -361,39 +392,13 @@ export function renderAdd(root) {
   }
 
   // Pre-fill cockpit crew from roster URL params (PegaSys bookmarklet)
-  if (prefill.rosterCrew?.length && state.crew?.length) {
-    const cockpitRanks = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'CP', 'FI'])
-    const cockpit = prefill.rosterCrew.filter(c => cockpitRanks.has(c.rank))
-    let slot = 0
-    for (const rc of cockpit) {
-      if (slot >= crewSlots.length) break
-      const matched = state.crew.find(c =>
-        c.employeeId && c.employeeId === rc.staffId
-      )
-      if (matched && !crewSlots.some(s => s?.id === matched.id)) {
-        crewSlots[slot++] = matched
-      }
-    }
-    if (slot > 0) renderCrewSlots(root, crewSlots)
-  }
+  _autofillCockpit(prefill.rosterCrew, crewSlots, root, renderCrewSlots)
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
   _loadRosterPicker(root, form, prefill, (rosterCrew) => {
     tryAutoFillAircraft()
     // 用 employeeId 比對 Crew List，自動填入駕駛艙組員
-    if (rosterCrew?.length && state.crew?.length) {
-      const cockpitRanks = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'CP', 'FI'])
-      const cockpit = rosterCrew.filter(c => cockpitRanks.has(c.rank))
-      let slot = 0
-      for (const rc of cockpit) {
-        if (slot >= crewSlots.length) break
-        const matched = state.crew.find(c => c.employeeId && c.employeeId === rc.staffId)
-        if (matched && !crewSlots.some(s => s?.id === matched.id)) {
-          crewSlots[slot++] = matched
-        }
-      }
-      if (slot > 0) renderCrewSlots(root, crewSlots)
-    }
+    _autofillCockpit(rosterCrew, crewSlots, root, renderCrewSlots)
   })
 }
 

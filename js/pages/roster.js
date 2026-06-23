@@ -266,7 +266,7 @@ export async function getRecentLegsForPicker(uid) {
       to:           lg.dest,
       stdLocal:     lg.std_local || '',
       blockTime:    lg.blockTime || 0,
-      crew:         p.crew || [],
+      crew:         lg.cockpit || [],   // 該段在線駕駛艙（PIC 第一）
       logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
     })))
     .filter(leg => {
@@ -289,18 +289,21 @@ let _selected = null                    // 'YYYYMMDD'
 let _myEmployeeId = ''                  // 用來在組員名單中標示自己
 
 // ── 駕駛艙組員渲染 ────────────────────────────
-function _crewHtml(crew) {
-  const COCKPIT_RANKS = ['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO']
-  const show = (crew || []).filter(c => COCKPIT_RANKS.includes(c.rank))
-  if (!show.length) return ''
+// cockpit 成員（PegaSys，已是在線駕駛艙、PIC 第一）：
+//   { staffId, firstName, lastName, preferredName, rank, position, workCode }
+function _crewHtml(cockpit) {
+  const list = cockpit || []
+  if (!list.length) return ''
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-subtle)">
     <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:6px;font-weight:600;letter-spacing:.5px">COCKPIT CREW</div>
-    ${show.map(c => {
+    ${list.map(c => {
       const isMe  = c.staffId && c.staffId === _myEmployeeId
-      const name  = `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.staffId || '—'
+      const name  = `${c.lastName || ''} ${c.firstName || ''}`.trim() || c.staffId || '—'
+      const pref  = c.preferredName ? ` <span style="color:var(--color-text-tertiary)">(${c.preferredName})</span>` : ''
+      const role  = c.position || c.rank || ''
       return `<div style="display:flex;gap:10px;align-items:center;padding:4px 0">
-        <span style="width:52px;font-size:11px;color:var(--color-text-secondary);font-weight:600;flex-shrink:0">${c.rank}</span>
-        <span style="font-size:13px;${isMe ? 'color:var(--color-primary);font-weight:700' : ''}">${name}${isMe ? ' ★' : ''}</span>
+        <span style="width:64px;font-size:11px;color:var(--color-text-secondary);font-weight:700;flex-shrink:0">${role}</span>
+        <span style="font-size:13px;${isMe ? 'color:var(--color-primary);font-weight:700' : ''}">${name}${pref}${isMe ? ' ★' : ''}</span>
       </div>`
     }).join('')}
   </div>`
@@ -443,7 +446,7 @@ function renderCalendar(scrollEl) {
               </div>` : ''}
           </div>
           ${rows || `<div style="font-size:13px;color:var(--color-text-secondary);padding:6px 0">無飛行任務</div>`}
-          ${_crewHtml(p.crew)}
+          ${_crewHtml(p.cockpit)}
           ${isFuture && legs.length > 0 ? `
             <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;
                         padding-top:8px">KneeBoard 僅執勤當天開放</div>` : ''}
@@ -729,23 +732,6 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
 
   try {
     const result   = await fetchRoster(employeeId, password)
-    // 臨時 debug：印出 PegaSys raw 結構以確認 crew 欄位位置（確認後移除）
-    console.log('[PegaSys debug] msgNames:', result.msgNames)
-    console.log('[PegaSys debug] firstDAKeys:', result._debug_firstDAKeys)
-    console.log('[PegaSys debug] firstDutyKeys:', result._debug_firstDutyKeys)
-    console.log('[PegaSys debug] crewCandidates:', JSON.stringify(result._debug_crewCandidates))
-    console.log('[PegaSys debug] crewPhase:', JSON.stringify(result._debug_crewPhase))
-    console.log('[PegaSys debug] crewRaw:', result._debug_crewRaw)
-    console.log('[PegaSys debug] activity[0]:', JSON.stringify(result._debug_activities?.[0]).slice(0, 2000))
-    // 臨時：把 crew 原始回應寫進 localStorage 供跨分頁讀取（確認後移除）
-    try {
-      localStorage.setItem('lb_crew_debug', JSON.stringify({
-        ts: new Date().toISOString(),
-        phase: result._debug_crewPhase,
-        raw: result._debug_crewRaw,
-        candidates: result._debug_crewCandidates,
-      }))
-    } catch (_) {}
     const pairings = result.pairings
     const isReal   = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
     const isDebug  = !Array.isArray(pairings) && pairings?._debug === true
