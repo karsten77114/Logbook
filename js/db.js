@@ -91,7 +91,15 @@ export async function getAllFlights(uid) {
   const col  = collection(db(), 'users', uid, 'flights')
   const q    = query(col, orderBy('date', 'desc'))
   const snap = await getDocs(q)
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  const flights = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  // 同一天的航班依出發時間(out/off) 由晚到早排序，讓回程(較晚)排在去程之上、跨日一致
+  const depKey = f => (f.outTime || f.offTime || '').replace(':', '')
+  return flights.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1            // date desc
+    const ak = depKey(a), bk = depKey(b)
+    if (ak !== bk) return ak < bk ? 1 : -1                            // 出發時間 desc
+    return (b.flightNumber || '').localeCompare(a.flightNumber || '') // 班號 desc 作後備
+  })
 }
 
 /**
