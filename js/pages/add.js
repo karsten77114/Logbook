@@ -224,6 +224,7 @@ function parseUrlParams() {
     stdUtc:             p.get('std')  || '',   // HHMM UTC e.g. "0745"
     staUtc:             p.get('sta')  || '',   // HHMM UTC
     blockMinutes:       parseInt(p.get('block') || '0', 10),
+    activityId:         p.get('act') || '',   // Roster 補記錄深連結 → 按需抓該班 crew
     rosterCrew,
   }
 }
@@ -520,6 +521,22 @@ export function renderAdd(root) {
 
   // Pre-fill cockpit crew from roster URL params (PegaSys bookmarklet)
   _autofillCockpit(prefill.rosterCrew, crewSlots, root, renderCrewSlots)
+
+  // 來自 Roster「補記錄」深連結（帶 act=activityId）→ 按需抓該班 crew 自動帶入
+  if (prefill.activityId && prefill.from && prefill.to) {
+    (async () => {
+      setCrewStatus(root, 'loading')
+      try {
+        const byRoute = await fetchCrewForActivity(state.user.uid, prefill.activityId)
+        const cockpit = byRoute[`${prefill.from}>${prefill.to}`] || []
+        if (!cockpit.length) { setCrewStatus(root, 'empty'); return }
+        const n = await _autofillCockpitFlow(cockpit, crewSlots, root, renderCrewSlots)
+        setCrewStatus(root, 'done', n)
+      } catch (e) {
+        setCrewStatus(root, e.code === 'no_creds' ? 'no-creds' : 'error')
+      }
+    })()
+  }
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
   _loadRosterPicker(root, form, prefill, async (leg) => {

@@ -425,7 +425,8 @@ function renderCalendar(scrollEl) {
         const addUrl = `add?fn=${lg.flightNumber}&date=${p.date}` +
           `&from=${lg.dep}&to=${lg.dest}` +
           `&std=${_hhmm(lg.std_local)}&sta=${_hhmm(lg.sta_local)}` +
-          `&block=${lg.blockTime || 0}`
+          `&block=${lg.blockTime || 0}` +
+          `&act=${encodeURIComponent(lg.activityId || p.activityId || '')}`
 
         return `
           <div ${logged && fId ? `data-navigate="detail/${fId}"` : ''}
