@@ -172,7 +172,11 @@ export async function fetchCrewForActivity(uid, activityId) {
     })
     const data = await resp.json()
     if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
-    return data.cockpitByRoute || {}
+    // 排除登入者本人（自己的 logbook，crew 槽是給其他駕駛艙成員，不必把自己帶入/跳新增）
+    const byRoute = data.cockpitByRoute || {}
+    const me = String(creds.employeeId)
+    for (const k of Object.keys(byRoute)) byRoute[k] = (byRoute[k] || []).filter(c => String(c.staffId) !== me)
+    return byRoute
   } finally {
     clearTimeout(timer)
   }
