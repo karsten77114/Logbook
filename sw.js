@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v90'
+const CACHE = 'logbook-v91'
 const PRECACHE = [
   './',
   './index.html',
@@ -53,6 +53,13 @@ self.addEventListener('activate', e => {
         })
       })
   )
+})
+
+// 回報目前運行中的 SW 版本（Settings 頁顯示用）
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'GET_VERSION') {
+    e.ports[0]?.postMessage({ version: CACHE })
+  }
 })
 
 self.addEventListener('fetch', e => {

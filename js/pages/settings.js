@@ -97,10 +97,61 @@ function renderContent(root) {
       </div>
     </div>
 
+    <!-- About -->
+    <div class="settings-header">About</div>
+    <div class="settings-section">
+      <div class="settings-row" style="color:var(--text-dim)">
+        <span class="settings-row-label">App Version</span>
+        <span class="settings-row-value" id="row-version" style="font-family:var(--font-mono);font-size:13px">…</span>
+      </div>
+      <div id="row-version-note" class="settings-row" style="display:none;color:var(--accent);font-size:12px">
+        <span class="settings-row-label" style="font-weight:600">⟳ 有新版待套用 — 完全關閉再重開 App</span>
+      </div>
+    </div>
+
     <div style="height:20px"></div>
   `
 
   attachSettingsEvents(root)
+  fillVersion(root)
+}
+
+// 顯示目前「運行中」的 SW 版本：先問控制中的 SW，後備用 caches.keys()
+async function getActiveVersion() {
+  try {
+    const sw = navigator.serviceWorker?.controller
+    if (sw) {
+      const v = await new Promise(resolve => {
+        const ch = new MessageChannel()
+        ch.port1.onmessage = e => resolve(e.data?.version)
+        sw.postMessage({ type: 'GET_VERSION' }, [ch.port2])
+        setTimeout(() => resolve(null), 800)
+      })
+      if (v) return v
+    }
+  } catch (_) {}
+  try {
+    const keys = await caches.keys()
+    const vers = keys.filter(n => /^logbook-v\d+/.test(n))
+                     .sort((a, b) => parseInt(b.replace(/\D/g, '')) - parseInt(a.replace(/\D/g, '')))
+    if (vers.length) return vers[0]
+  } catch (_) {}
+  return null
+}
+
+async function fillVersion(root) {
+  const el = root.querySelector('#row-version')
+  if (!el) return
+  const v = await getActiveVersion()
+  el.textContent = v ? v.replace(/^logbook-/, '') : 'unknown'
+  // 是否有等待套用的新 SW（skipWaiting 下通常即時接管，這裡保險檢查）
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration()
+    if (reg?.waiting || reg?.installing) {
+      const note = root.querySelector('#row-version-note')
+      if (note) note.style.display = ''
+    }
+  } catch (_) {}
 }
 
 
