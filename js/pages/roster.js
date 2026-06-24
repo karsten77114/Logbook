@@ -156,6 +156,28 @@ async function fetchRoster(employeeId, password) {
   }
 }
 
+// 按需抓「某 activity」的在線駕駛艙 crew（Add Flight 自動帶入用）。
+// 回傳 { "TPE>SGN":[在線駕駛艙(PIC 第一)], ... }；無帳密 throw {code:'no_creds'}。
+export async function fetchCrewForActivity(uid, activityId) {
+  const creds = await getPegasysCreds(uid)
+  if (!creds?.employeeId || !creds?.password) { const e = new Error('no_creds'); e.code = 'no_creds'; throw e }
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
+  try {
+    const resp = await fetch(`${ROSTER_SERVICE_URL}/crew`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: creds.employeeId, password: creds.password, activityId }),
+      signal: ctrl.signal,
+    })
+    const data = await resp.json()
+    if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+    return data.cockpitByRoute || {}
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ── Logbook 連動：查詢過去航班是否已記錄 ─────
 // key: "YYYYMMDD_fnWithoutJX"  →  value: Firestore flightId
 let _loggedFlights = new Map()
@@ -278,6 +300,7 @@ export async function getRecentLegsForPicker(uid) {
       to:           lg.dest,
       stdLocal:     lg.std_local || '',
       blockTime:    lg.blockTime || 0,
+      activityId:   lg.activityId || p.activityId || null,  // 供 Add Flight 按需抓該班 crew
       crew:         lg.cockpit || [],   // 該段在線駕駛艙（PIC 第一）
       logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
     })))

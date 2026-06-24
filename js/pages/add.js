@@ -22,6 +22,7 @@ import { isAircraftActive,
 import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
 import { getRecentLegsForPicker,
+         fetchCrewForActivity,
          WORKER_URL }               from './roster.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
@@ -57,6 +58,132 @@ function _autofillCockpit(rosterCrew, crewSlots, root, renderCrewSlots) {
     }
   }
   if (slot > 0) renderCrewSlots(root, crewSlots)
+}
+
+// 自動帶入組員的狀態列：讓使用者清楚知道「讀取中/已帶入/抓不到/失敗/未設定」
+function setCrewStatus(root, st, detail) {
+  const el = root.querySelector('#crew-status')
+  if (!el) return
+  const map = {
+    loading:    ['⏳ 讀取組員中…',                          'var(--text-dim,#888)'],
+    done:       [`✓ 已自動帶入 ${detail || 0} 位駕駛艙組員`, 'var(--green,#1a7838)'],
+    empty:      ['查無此航班的在線駕駛艙資料',                'var(--accent,#a06818)'],
+    error:      ['✕ 組員讀取失敗，可手動加入',               '#c0392b'],
+    'no-creds': ['未設定 PegaSys 帳密，無法自動帶入',         'var(--accent,#a06818)'],
+    manual:     ['手動輸入航班，未自動帶組員',               'var(--text-faint,#aaa)'],
+    idle:       ['', ''],
+  }
+  const [txt, color] = map[st] || map.idle
+  el.textContent = txt
+  el.style.color = color
+  el.style.display = txt ? '' : 'none'
+}
+
+// PegaSys rank/position → app 的 Position 選項
+function _rankToPosition(rc) {
+  const r = (rc.rank || '').toUpperCase()
+  if (r === 'TCAP') return 'Check Captain'
+  if (r === 'CAP')  return 'CA'
+  if (r === 'SFO')  return 'SFO'
+  if (r === 'FO')   return 'FO'
+  if (/PIC|P1/i.test(rc.position || '')) return 'CA'
+  if (/P2/i.test(rc.position  || '')) return 'FO'
+  return ''
+}
+
+// 在線駕駛艙(已 PIC 第一)：已存的(員編比中)直接填；未存的逐一跳「預填新增」視窗，
+// 新增後填入空格。回傳填入總數。
+async function _autofillCockpitFlow(cockpit, crewSlots, root, renderCrewSlots) {
+  const missing = []
+  for (const rc of (cockpit || [])) {
+    const matched = (state.crew || []).find(c => c.employeeId && c.employeeId === rc.staffId)
+    if (matched) {
+      if (!crewSlots.some(s => s?.id === matched.id)) {
+        const idx = crewSlots.findIndex(s => !s)
+        if (idx >= 0) crewSlots[idx] = matched
+      }
+    } else if (rc.staffId) {
+      missing.push(rc)
+    }
+  }
+  renderCrewSlots(root, crewSlots)
+
+  for (const rc of missing) {
+    if (crewSlots.every(s => s)) break          // 無空位
+    const added = await _promptPrefilledCrew(rc)
+    if (added && !crewSlots.some(s => s?.id === added.id)) {
+      const idx = crewSlots.findIndex(s => !s)
+      if (idx >= 0) { crewSlots[idx] = added; renderCrewSlots(root, crewSlots) }
+    }
+  }
+  return crewSlots.filter(Boolean).length
+}
+
+// 預填「姓名 + 員編 + 職位」的新增組員視窗；存→resolve(新crew obj)，略過→resolve(null)
+function _promptPrefilledCrew(rc) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.className = 'modal-overlay'
+    overlay.style.zIndex = '10002'
+    const pos = _rankToPosition(rc)
+    const posOpts = ['FO', 'SFO', 'CA', 'Check Captain', 'Student Pilot', 'Other']
+    const esc = s => (s || '').replace(/"/g, '&quot;')
+    overlay.innerHTML = `
+      <div class="modal-sheet">
+        <div class="modal-handle"></div>
+        <div class="modal-title">新增組員（已帶入班表資料）</div>
+        <div style="font-size:12px;color:var(--text-dim);margin:-4px 0 12px">
+          ${rc.position || rc.rank || ''} · 員編 ${rc.staffId} — 確認後加入你的 Crew 名單
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">First Name</label>
+            <input class="form-input" id="pf-first" type="text" value="${esc(rc.firstName)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Last Name</label>
+            <input class="form-input" id="pf-last" type="text" value="${esc(rc.lastName)}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Position</label>
+          <select class="form-select" id="pf-pos">
+            <option value="">— Select —</option>
+            ${posOpts.map(p => `<option value="${p}"${p === pos ? ' selected' : ''}>${p}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Employee ID</label>
+          <input class="form-input mono" id="pf-empid" type="text" value="${esc(rc.staffId)}">
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button class="btn" id="pf-skip" style="flex:1">略過</button>
+          <button class="btn btn-primary" id="pf-save" style="flex:2">加入並帶入</button>
+        </div>
+      </div>`
+    document.body.appendChild(overlay)
+
+    const close = (val) => { overlay.remove(); resolve(val) }
+    overlay.querySelector('#pf-skip').addEventListener('click', () => close(null))
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(null) })
+    overlay.querySelector('#pf-save').addEventListener('click', async () => {
+      const first = (overlay.querySelector('#pf-first').value || '').trim()
+      const last  = (overlay.querySelector('#pf-last').value  || '').trim()
+      const posv  = overlay.querySelector('#pf-pos').value
+      const empId = (overlay.querySelector('#pf-empid').value || '').trim()
+      if (!first && !last) { showToast('Name is required', 'error'); return }
+      const existing = (state.crew || []).find(c => c.employeeId && c.employeeId === empId)
+      if (existing) { close(existing); return }   // 員編已存在 → 用既有，不重複建檔
+      const id = `crew_${Date.now()}`
+      const data = { firstName: first, lastName: last, position: posv, active: true, ...(empId && { employeeId: empId }) }
+      try {
+        await saveCrew(state.user.uid, id, data)
+        const obj = { id, ...data }
+        state.crew = [...(state.crew || []), obj]
+        close(obj)
+      } catch (e) { showToast('新增失敗', 'error') }
+    })
+  })
 }
 
 // ── Custom Aircraft helpers ────────────────────
@@ -395,10 +522,22 @@ export function renderAdd(root) {
   _autofillCockpit(prefill.rosterCrew, crewSlots, root, renderCrewSlots)
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
-  _loadRosterPicker(root, form, prefill, (rosterCrew) => {
+  _loadRosterPicker(root, form, prefill, async (leg) => {
     tryAutoFillAircraft()
-    // 用 employeeId 比對 Crew List，自動填入駕駛艙組員
-    _autofillCockpit(rosterCrew, crewSlots, root, renderCrewSlots)
+    // 按需抓「該班」crew → 自動帶入駕駛艙（PIC 第一）；過程顯示狀態
+    if (!leg.activityId) { setCrewStatus(root, 'manual'); return }
+    setCrewStatus(root, 'loading')
+    showToast('讀取組員中…')
+    try {
+      const byRoute = await fetchCrewForActivity(state.user.uid, leg.activityId)
+      const cockpit = byRoute[`${leg.from}>${leg.to}`] || []
+      if (!cockpit.length) { setCrewStatus(root, 'empty'); showToast('查無此航班組員資料'); return }
+      const n = await _autofillCockpitFlow(cockpit, crewSlots, root, renderCrewSlots)
+      setCrewStatus(root, 'done', n)
+    } catch (e) {
+      setCrewStatus(root, e.code === 'no_creds' ? 'no-creds' : 'error')
+      showToast(e.code === 'no_creds' ? '未設定 PegaSys 帳密' : '組員讀取失敗', 'error')
+    }
   })
 }
 
@@ -423,20 +562,15 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
 
   if (!legs?.length) { section.remove(); return }
 
-  // crew lookup by fn|date (crew is at pairing level, same for all legs)
-  const crewByKey = new Map()
-  listEl.innerHTML = legs.map(lg => {
-    crewByKey.set(`${lg.flightNumber}|${lg.dateIso}`, lg.crew || [])
-    return `
+  listEl.innerHTML = legs.map(lg => `
     <div class="rp-row${lg.logged ? ' rp-logged' : ''}"
          data-fn="${lg.flightNumber}" data-date="${lg.dateIso}"
-         data-from="${lg.from}" data-to="${lg.to}">
+         data-from="${lg.from}" data-to="${lg.to}" data-act="${lg.activityId || ''}">
       <span class="rp-fn">${lg.flightNumber}</span>
       <span class="rp-route">${lg.from}&nbsp;→&nbsp;${lg.to}</span>
       <span class="rp-meta">${_rpFmtDate(lg.dateIso)}${lg.stdLocal ? ' · ' + lg.stdLocal + 'L' : ''}</span>
       ${lg.logged ? '<span class="rp-check">✓</span>' : ''}
-    </div>`
-  }).join('')
+    </div>`).join('')
 
   listEl.querySelectorAll('.rp-row').forEach(row => {
     row.addEventListener('click', () => {
@@ -460,7 +594,7 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
       listEl.querySelectorAll('.rp-row').forEach(r => r.classList.remove('rp-selected'))
       row.classList.add('rp-selected')
 
-      onPick(crewByKey.get(`${fn}|${date}`) || [])  // pass roster crew to callback
+      onPick({ fn, date, from, to, activityId: row.dataset.act || null })
     })
   })
 }
@@ -946,6 +1080,8 @@ function step5Html() {
         <div class="step-num">05 / 05</div>
         <div class="step-title">Crew</div>
       </div>
+
+      <div id="crew-status" style="display:none;font-size:12.5px;font-weight:600;margin:0 0 12px;padding:9px 12px;border-radius:8px;background:var(--surface-2,rgba(0,0,0,.04))"></div>
 
       <div class="crew-slots">
         ${CREW_ROLES.map((role, i) => `
