@@ -27,6 +27,15 @@ function _rcGet(uid) {
   } catch { return null }
 }
 
+// last-good 讀取：忽略 TTL，只要 uid 相符就回傳（抓取失敗時的離線回退用）
+function _rcGetStale(uid) {
+  try {
+    const c = JSON.parse(localStorage.getItem(_RC_KEY) || 'null')
+    if (!c || c.uid !== uid) return null
+    return c.pairings
+  } catch { return null }
+}
+
 function _rcSet(uid, pairings) {
   try {
     localStorage.setItem(_RC_KEY, JSON.stringify({ uid, pairings, t: Date.now() }))
@@ -245,7 +254,7 @@ export async function getRecentLegsForPicker(uid) {
       const r = await fetchRoster(creds.employeeId, creds.password)
       pairings = r.pairings
       if (pairings?.length) _rcSet(uid, pairings)
-    } catch { return null }
+    } catch { pairings = _rcGetStale(uid) }   // 抓取失敗 → 用 last-good 快取，picker 仍可列航班
   }
   if (!Array.isArray(pairings) || !pairings.length) return null
 
@@ -794,6 +803,27 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
       showToast('❌ 帳號或密碼已失效，請重新登入')
       renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw, true))
     } else {
+      // 抓取失敗 → 退回顯示 last-good 本機快取（Worker 封鎖/離線時仍可看班表、可在 Add Flight 點選航班）
+      const stale = _rcGetStale(uid)
+      if (stale?.length) {
+        _pairings = stale
+        _myEmployeeId = employeeId
+        await loadLoggedFlights(uid, stale)
+        const today    = todayStr()
+        const upcoming = stale.filter(p => p.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+        if (upcoming.length > 0) {
+          _calYear  = parseInt(upcoming[0].date.slice(0, 4))
+          _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
+        } else {
+          _calYear  = new Date().getFullYear()
+          _calMonth = new Date().getMonth()
+        }
+        _selected = stale.some(p => p.date === today) ? today : null
+        renderCalendar(scroll)
+        showToast('⚠ 無法更新，顯示上次快取班表（離線）')
+        return
+      }
+
       const isTimeout = e.name === 'AbortError'
       const message = isTimeout
         ? 'PegaSys 或同步 Worker 回應逾時。請稍後重試；如果公司剛更新密碼，請重新設定帳密。'
