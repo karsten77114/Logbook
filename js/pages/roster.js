@@ -9,11 +9,14 @@ import { navigate, showToast }   from '../app.js'
 import { navIcon }               from '../ui/nav-icons.js'
 
 export const WORKER_URL  = 'https://jx-briefing.karsten77114.workers.dev'
+// PegaSys roster 抓取改打獨立服務（Render，全新可丟棄 IP，繞過 Worker IP 封鎖）。
+// 其餘 Worker 端點（機號/機場查詢等，未被封）仍用 WORKER_URL。
+const ROSTER_SERVICE_URL = 'https://pegasys-fetch.onrender.com'
 const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
 const STYLE_ID    = 'roster-cal-v3'
-const ROSTER_TIMEOUT_MS = 15000
+const ROSTER_TIMEOUT_MS = 45000   // 拉長以容忍 Render 免費方案冷啟動（~30-50s）
 
 // ── Roster 快取（localStorage）────────────────
 const _RC_KEY = 'lb_roster_v1'
@@ -139,7 +142,7 @@ async function fetchRoster(employeeId, password) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
   try {
-    const resp = await fetch(`${WORKER_URL}/pegasys/roster`, {
+    const resp = await fetch(`${ROSTER_SERVICE_URL}/roster`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId, password }),
