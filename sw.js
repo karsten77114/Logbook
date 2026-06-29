@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v91'
+const CACHE = 'logbook-v92'
 const PRECACHE = [
   './',
   './index.html',
@@ -70,6 +70,13 @@ self.addEventListener('fetch', e => {
   }
 
   const url = new URL(e.request.url)
+
+  // Only cache this app's own static files. Dynamic/cross-origin APIs such as
+  // flight track lookups must always hit the network because availability
+  // changes after a flight lands.
+  if (url.origin !== self.location.origin) {
+    return
+  }
 
   // Firebase / Google 請求：完全不攔截
   if (url.hostname.includes('firebase') || url.hostname.includes('google') ||

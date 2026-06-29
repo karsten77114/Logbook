@@ -207,9 +207,17 @@ const PROXY_BASE = 'https://jx-briefing.karsten77114.workers.dev'
 async function fetchTrackFR24(reg, date, from, to, fn) {
   if (!reg || !date) return null
   try {
-    const qs = new URLSearchParams({ reg, date, from: from || '', to: to || '', fn: fn || '' })
+    const qs = new URLSearchParams({
+      reg,
+      date,
+      from: from || '',
+      to: to || '',
+      fn: fn || '',
+      _: String(Date.now()),
+    })
     const res = await fetch(`${PROXY_BASE}/api/track/fr24?${qs}`, {
       signal: AbortSignal.timeout(18000),
+      cache: 'no-store',
     })
     if (!res.ok) return null
     const data = await res.json()
