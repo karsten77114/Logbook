@@ -41,6 +41,7 @@ export async function renderDetail(root, params) {
       `${f.from || '?'} → ${f.to || '?'}`
 
     root.querySelector('#detail-scroll').innerHTML = buildDetailHtml(f)
+    setupTrackRefresh(root, f, flightId)
 
     // Edit button
     root.querySelector('#btn-edit').addEventListener('click', () => {
@@ -57,7 +58,8 @@ export async function renderDetail(root, params) {
       })
     })
 
-    // Try to fetch track if none stored
+    // Try to fetch track if none stored. Existing tracks are rendered as-is;
+    // use Refresh or Save Changes to force a fresh pull after delayed FR24 data.
     if (!f.flightTrack && f.offTime && f.onTime) {
       tryFetchTrack(root, f, flightId)
     } else if (f.flightTrack?.length > 0) {
@@ -155,7 +157,10 @@ function buildDetailHtml(f) {
 
       <!-- Map placeholder -->
       <div class="detail-card" id="map-card">
-        <div class="detail-card-title">Flight Track</div>
+        <div class="detail-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <span>Flight Track</span>
+          <button class="btn btn-sm" id="track-refresh" type="button">Refresh</button>
+        </div>
         <div id="track-map-wrap">
           <div style="color:var(--text-faint);font-size:13px;text-align:center;padding:20px">
             Loading flight track…
@@ -183,6 +188,21 @@ function buildDetailHtml(f) {
       </div>
 
     </div>`
+}
+
+function setupTrackRefresh(root, f, flightId) {
+  const btn = root.querySelector('#track-refresh')
+  if (!btn) return
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    btn.textContent = 'Refreshing…'
+    try {
+      await tryFetchTrack(root, f, flightId, { force: true })
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Refresh'
+    }
+  })
 }
 
 function detailRow(key, val, cls = '') {
@@ -228,7 +248,7 @@ async function fetchTrackFR24(reg, date, from, to, fn) {
   }
 }
 
-async function tryFetchTrack(root, f, flightId) {
+async function tryFetchTrack(root, f, flightId, opts = {}) {
   const wrap = root.querySelector('#track-map-wrap')
   if (!wrap) return
 
@@ -261,6 +281,12 @@ async function tryFetchTrack(root, f, flightId) {
     }
 
     if (track?.length) {
+      const existingLen = f.flightTrack?.length || 0
+      if (opts.force && existingLen && track.length < existingLen) {
+        renderTrack(root, f.flightTrack)
+        showToast('Existing flight track is more complete', 'error')
+        return
+      }
       renderTrack(root, track)
       // Persist track to Firestore so future visits don't re-fetch
       if (flightId) {
@@ -270,9 +296,15 @@ async function tryFetchTrack(root, f, flightId) {
       if (!f.runway && flightId) {
         autoDetectRunway(root, track, f.to, flightId)
       }
+      if (opts.force) showToast('Flight track refreshed', 'success')
     } else {
+      if (opts.force && f.flightTrack?.length) {
+        renderTrack(root, f.flightTrack)
+        showToast('No newer ADS-B track available', 'error')
+        return
+      }
       wrap.innerHTML = `<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">
-        No ADS-B track available</div>`
+        ${opts.force ? 'No newer ADS-B track available' : 'No ADS-B track available'}</div>`
     }
   }
 
@@ -897,8 +929,12 @@ function showEditSheet(root, f, flightId) {
       const scroll = root.querySelector('#detail-scroll')
       const newF   = { ...f, ...changes }
       if (scroll) scroll.innerHTML = buildDetailHtml(newF)
+      setupTrackRefresh(root, newF, flightId)
       const titleEl = root.querySelector('#detail-title')
       if (titleEl) titleEl.textContent = `${newF.from || '?'} → ${newF.to || '?'}`
+      if (newF.offTime && newF.onTime) {
+        tryFetchTrack(root, newF, flightId, { force: true }).catch(() => {})
+      }
     } catch (e) {
       showToast('Save failed', 'error')
     }
