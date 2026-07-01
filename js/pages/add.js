@@ -200,6 +200,26 @@ async function addCustomAircraftEntry(reg, type) {
 }
 
 // ── URL params prefill (Roster / KneeBoard integration) ─
+function _addDaysIso(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+function _dsToIso(ds) {
+  if (!ds) return ''
+  if (ds.includes('-')) return ds
+  return `${ds.slice(0, 4)}-${ds.slice(4, 6)}-${ds.slice(6, 8)}`
+}
+function _utcDateFromRosterLocal(rosterDate, stdLocal) {
+  const iso = _dsToIso(rosterDate)
+  const hhmm = (stdLocal || '').replace(':', '')
+  if (!iso || !/^\d{3,4}$/.test(hhmm)) return iso
+  const h = parseInt(hhmm.length === 4 ? hhmm.slice(0, 2) : hhmm.slice(0, 1), 10)
+  const m = parseInt(hhmm.slice(-2), 10)
+  // PegaSys roster times are treated as Taiwan local time in this app.
+  return (h * 60 + m) < 8 * 60 ? _addDaysIso(iso, -1) : iso
+}
+
 function parseUrlParams() {
   const hash   = location.hash
   const search = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
@@ -212,16 +232,20 @@ function parseUrlParams() {
     try { rosterCrew = JSON.parse(atob(crewB64)) } catch (_) {}
   }
 
+  const rosterDate = p.get('rosterDate') || p.get('date') || ''
+  const stdLocal = p.get('std') || ''
+
   return {
     flightNumber:       p.get('fn')   || '',
-    date:               p.get('date') || todayUTC(),
+    date:               rosterDate ? _utcDateFromRosterLocal(rosterDate, stdLocal) : todayUTC(),
+    rosterDate:         _dsToIso(rosterDate),
     from:               p.get('from') || '',
     to:                 p.get('to')   || '',
     registration:       p.get('reg')  || '',
     aircraftType:       p.get('type') || '',
     flightPlanDistance: parseInt(p.get('dist') || '0', 10),
     // Roster-injected fields
-    stdUtc:             p.get('std')  || '',   // HHMM UTC e.g. "0745"
+    stdUtc:             stdLocal,              // HHMM local from roster e.g. "0745"
     staUtc:             p.get('sta')  || '',   // HHMM UTC
     blockMinutes:       parseInt(p.get('block') || '0', 10),
     activityId:         p.get('act') || '',   // Roster 補記錄深連結 → 按需抓該班 crew
@@ -235,6 +259,7 @@ export function renderAdd(root) {
 
   const form = {
     date:               prefill.date,
+    rosterDate:         prefill.rosterDate,
     flightNumber:       prefill.flightNumber,
     from:               prefill.from,
     to:                 prefill.to,
@@ -358,7 +383,7 @@ export function renderAdd(root) {
       const _from = form.from || root.querySelector('#f-from')?.value || ''
       const _to   = form.to   || root.querySelector('#f-to')?.value   || ''
       if (date <= todayUTC() && _from && _to) {
-        fetchRunwayForFlight({ fn, date, reg, from: _from, to: _to })
+        fetchRunwayForFlight({ fn, date, rosterDate: form.rosterDate, reg, from: _from, to: _to })
           .then(runway => {
             if (!runway) return
             form.runway = runway
@@ -582,6 +607,8 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
   listEl.innerHTML = legs.map(lg => `
     <div class="rp-row${lg.logged ? ' rp-logged' : ''}"
          data-fn="${lg.flightNumber}" data-date="${lg.dateIso}"
+         data-roster-date="${lg.rosterDate || lg.dateIso}"
+         data-std="${lg.stdLocal || ''}"
          data-from="${lg.from}" data-to="${lg.to}" data-act="${lg.activityId || ''}">
       <span class="rp-fn">${lg.flightNumber}</span>
       <span class="rp-route">${lg.from}&nbsp;→&nbsp;${lg.to}</span>
@@ -593,11 +620,13 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
     row.addEventListener('click', () => {
       const fn   = row.dataset.fn
       const date = row.dataset.date
+      const rosterDate = row.dataset.rosterDate || date
       const from = row.dataset.from
       const to   = row.dataset.to
 
       form.flightNumber = fn
       form.date         = date
+      form.rosterDate   = rosterDate
       form.from         = from
       form.to           = to
 
@@ -611,7 +640,7 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
       listEl.querySelectorAll('.rp-row').forEach(r => r.classList.remove('rp-selected'))
       row.classList.add('rp-selected')
 
-      onPick({ fn, date, from, to, activityId: row.dataset.act || null })
+      onPick({ fn, date, rosterDate, from, to, activityId: row.dataset.act || null })
     })
   })
 }

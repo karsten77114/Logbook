@@ -248,6 +248,39 @@ async function fetchTrackFR24(reg, date, from, to, fn) {
   }
 }
 
+function _addDaysIso(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+function _hmToMin(s) {
+  const v = (s || '').replace(':', '')
+  if (!/^\d{3,4}$/.test(v)) return null
+  const h = parseInt(v.length === 4 ? v.slice(0, 2) : v.slice(0, 1), 10)
+  const m = parseInt(v.slice(-2), 10)
+  return h * 60 + m
+}
+function _trackDateCandidates(f) {
+  const date = f.date || ''
+  const dates = []
+  const add = d => { if (d && !dates.includes(d)) dates.push(d) }
+
+  add(f.rosterDate)
+  const depMin = _hmToMin(f.offTime || f.outTime)
+  if (date && depMin != null && depMin >= 16 * 60) add(_addDaysIso(date, 1))
+  add(date)
+  return dates
+}
+
+async function fetchTrackFR24ForFlight(f) {
+  let best = null
+  for (const date of _trackDateCandidates(f)) {
+    const track = await fetchTrackFR24(f.registration, date, f.from, f.to, f.flightNumber)
+    if (track?.length && (!best || track.length > best.length)) best = track
+  }
+  return best
+}
+
 async function tryFetchTrack(root, f, flightId, opts = {}) {
   const wrap = root.querySelector('#track-map-wrap')
   if (!wrap) return
@@ -277,7 +310,7 @@ async function tryFetchTrack(root, f, flightId, opts = {}) {
     if (!track?.length && f.registration && f.date) {
       wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
         ⏳ Fetching FR24 track…</div>`
-      track = await fetchTrackFR24(f.registration, f.date, f.from, f.to, f.flightNumber)
+      track = await fetchTrackFR24ForFlight(f)
     }
 
     if (track?.length) {
@@ -662,9 +695,16 @@ async function autoDetectRunway(root, track, destIata, flightId) {
  * Add Flight 選航班時立即背景查跑道，回傳跑道字串或 null。
  * 只需 fn/date/reg/from/to，不需要 OOOI 時間。
  */
-export async function fetchRunwayForFlight({ fn, date, reg, from, to }) {
+export async function fetchRunwayForFlight({ fn, date, rosterDate, reg, from, to }) {
   if (!reg || !date) return null
-  const track = await fetchTrackFR24(reg, date, from, to, fn)
+  const track = await fetchTrackFR24ForFlight({
+    flightNumber: fn,
+    date,
+    rosterDate,
+    registration: reg,
+    from,
+    to,
+  })
   if (!track?.length) return null
   return detectRunway(track, to) ?? null
 }
@@ -704,7 +744,7 @@ export async function backgroundFetchAndSaveTrack(uid, flightId, f) {
 
   // Strategy 2: FR24 via Worker proxy
   if (!track?.length && f.registration && f.date) {
-    track = await fetchTrackFR24(f.registration, f.date, f.from, f.to, f.flightNumber)
+    track = await fetchTrackFR24ForFlight(f)
   }
 
   if (!track?.length) return

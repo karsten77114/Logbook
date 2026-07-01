@@ -136,6 +136,51 @@ function _daysAhead(n) {
   const d = new Date(); d.setDate(d.getDate() + n)
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
 }
+function _addDaysDs(ds, n) {
+  const d = new Date(Date.UTC(
+    parseInt(ds.slice(0, 4), 10),
+    parseInt(ds.slice(4, 6), 10) - 1,
+    parseInt(ds.slice(6, 8), 10) + n
+  ))
+  return d.toISOString().slice(0, 10).replace(/-/g, '')
+}
+function _toDs(s) {
+  return (s || '').replace(/-/g, '')
+}
+function _hmToMin(s) {
+  const v = (s || '').replace(':', '')
+  if (!/^\d{3,4}$/.test(v)) return null
+  const hh = parseInt(v.length === 4 ? v.slice(0, 2) : v.slice(0, 1), 10)
+  const mm = parseInt(v.slice(-2), 10)
+  return hh * 60 + mm
+}
+function _loggedKeysForFlight(f) {
+  const fn = (f.flightNumber || '').replace(/^JX/i, '')
+  const dateKey = _toDs(f.date)
+  if (!dateKey || !fn) return []
+
+  const keys = new Set([`${dateKey}_${fn}`])
+  const rosterDateKey = _toDs(f.rosterDate)
+  if (rosterDateKey) keys.add(`${rosterDateKey}_${fn}`)
+
+  // Logbook date is UTC, while PegaSys roster dates are local duty dates.
+  // Early local departures such as 07:20L Taiwan depart after 16:00Z on
+  // the previous UTC date, so also match UTC date + 1 for legacy records.
+  const depMin = _hmToMin(f.offTime || f.outTime)
+  if (depMin != null && depMin >= 16 * 60) {
+    keys.add(`${_addDaysDs(dateKey, 1)}_${fn}`)
+  }
+  return [...keys]
+}
+function _utcDateFromRosterLocal(rosterDs, stdLocal) {
+  const hhmm = (stdLocal || '').replace(':', '')
+  if (!/^\d{3,4}$/.test(hhmm)) return _dsToIso(rosterDs)
+  const h = parseInt(hhmm.length === 4 ? hhmm.slice(0, 2) : hhmm.slice(0, 1), 10)
+  const m = parseInt(hhmm.slice(-2), 10)
+  // App-level convention: PegaSys roster times are treated as UTC+8 local time.
+  const utcDs = (h * 60 + m) < 8 * 60 ? _addDaysDs(rosterDs, -1) : rosterDs
+  return _dsToIso(utcDs)
+}
 
 // ── Worker fetch ──────────────────────────────
 async function fetchRoster(employeeId, password) {
@@ -203,20 +248,21 @@ async function loadLoggedFlights(uid, pairings) {
   const dates = past.map(p => p.date)
   const minDs = dates.reduce((a, b) => a < b ? a : b)
   const maxDs = dates.reduce((a, b) => a > b ? a : b)
+  const queryMinDs = _addDaysDs(minDs, -1)
 
   try {
     const q    = query(
       collection(db(), 'users', uid, 'flights'),
-      where('date', '>=', _dsToIso(minDs)),
+      where('date', '>=', _dsToIso(queryMinDs)),
       where('date', '<=', _dsToIso(maxDs))
     )
     const snap = await getDocs(q)
     _loggedFlights = new Map()
     for (const d of snap.docs) {
-      const f       = d.data()
-      const dateKey = (f.date || '').replace(/-/g, '')           // YYYY-MM-DD → YYYYMMDD
-      const fn      = (f.flightNumber || '').replace(/^JX/i, '') // 去 JX 前綴
-      if (dateKey && fn) _loggedFlights.set(`${dateKey}_${fn}`, d.id)
+      const f = d.data()
+      for (const key of _loggedKeysForFlight(f)) {
+        if (!_loggedFlights.has(key)) _loggedFlights.set(key, d.id)
+      }
     }
     _loggedFlightsSig = sig
     _loggedFlightsTs  = Date.now()
@@ -299,7 +345,8 @@ export async function getRecentLegsForPicker(uid) {
     .flatMap(p => (p.legs || []).map(lg => ({
       flightNumber: lg.flightNumber,
       dateDs:       p.date,
-      dateIso:      _dsToIso(p.date),
+      dateIso:      _utcDateFromRosterLocal(p.date, lg.std_local || ''),
+      rosterDate:   _dsToIso(p.date),
       from:         lg.dep,
       to:           lg.dest,
       stdLocal:     lg.std_local || '',
