@@ -292,9 +292,29 @@ async function fetchTrackFR24ForFlight(f) {
   let best = null
   for (const date of _trackDateCandidates(f)) {
     const track = await fetchTrackFR24(f.registration, date, f.from, f.to, f.flightNumber)
-    if (track?.length && (!best || track.length > best.length)) best = track
+    if (_isBetterTrack(track, best)) best = track
   }
   return best
+}
+
+function _trackDurationSec(track) {
+  if (!track?.length) return 0
+  const first = track[0]?.t || 0
+  const last  = track[track.length - 1]?.t || 0
+  return Math.max(0, last - first)
+}
+function _isBetterTrack(candidate, current) {
+  if (!candidate?.length) return false
+  if (!current?.length) return true
+  const candDur = _trackDurationSec(candidate)
+  const currDur = _trackDurationSec(current)
+  if (candDur > currDur + 10 * 60) return true
+  if (Math.abs(candDur - currDur) <= 10 * 60 && candidate.length > current.length) return true
+  return false
+}
+function _isTrackLikelyPartial(track, f) {
+  if (!track?.length || !f.flightTime) return !track?.length
+  return _trackDurationSec(track) < f.flightTime * 60 * 0.75
 }
 
 async function tryFetchTrack(root, f, flightId, opts = {}) {
@@ -323,16 +343,17 @@ async function tryFetchTrack(root, f, flightId, opts = {}) {
     let track = null
     if (ic && !tooOld) track = await fetchTrack(ic, midpoint)
 
-    // Strategy 2: FR24 via Worker proxy (works when Cloudflare allows)
-    if (!track?.length && f.registration && f.date) {
+    // Strategy 2: FR24 via Worker proxy. Force-refresh always checks FR24,
+    // and normal fetches also check it when OpenSky looks partial.
+    if (f.registration && f.date && (opts.force || !track?.length || _isTrackLikelyPartial(track, f))) {
       wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
         ⏳ Fetching FR24 track…</div>`
-      track = await fetchTrackFR24ForFlight(f)
+      const fr24Track = await fetchTrackFR24ForFlight(f)
+      if (_isBetterTrack(fr24Track, track)) track = fr24Track
     }
 
     if (track?.length) {
-      const existingLen = f.flightTrack?.length || 0
-      if (opts.force && existingLen && track.length < existingLen) {
+      if (opts.force && f.flightTrack?.length && !_isBetterTrack(track, f.flightTrack)) {
         renderTrack(root, f.flightTrack)
         showToast('Existing flight track is more complete', 'error')
         return
@@ -761,8 +782,9 @@ export async function backgroundFetchAndSaveTrack(uid, flightId, f) {
   }
 
   // Strategy 2: FR24 via Worker proxy
-  if (!track?.length && f.registration && f.date) {
-    track = await fetchTrackFR24ForFlight(f)
+  if (f.registration && f.date && (!track?.length || _isTrackLikelyPartial(track, f))) {
+    const fr24Track = await fetchTrackFR24ForFlight(f)
+    if (_isBetterTrack(fr24Track, track)) track = fr24Track
   }
 
   if (!track?.length) return
