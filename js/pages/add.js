@@ -219,6 +219,15 @@ function _utcDateFromRosterLocal(rosterDate, stdLocal) {
   // PegaSys roster times are treated as Taiwan local time in this app.
   return (h * 60 + m) < 8 * 60 ? _addDaysIso(iso, -1) : iso
 }
+function _utcDateFromRosterUtcTime(rosterDate, utcHm) {
+  const iso = _dsToIso(rosterDate)
+  const hhmm = (utcHm || '').replace(':', '')
+  if (!iso || !/^\d{3,4}$/.test(hhmm)) return ''
+  const h = parseInt(hhmm.length === 4 ? hhmm.slice(0, 2) : hhmm.slice(0, 1), 10)
+  const m = parseInt(hhmm.slice(-2), 10)
+  // UTC 16:00-23:59 belongs to the next local roster date (UTC+8).
+  return (h * 60 + m) >= 16 * 60 ? _addDaysIso(iso, -1) : iso
+}
 
 function parseUrlParams() {
   const hash   = location.hash
@@ -777,6 +786,12 @@ function collectStep(root, form, step) {
     form.offTime  = normalizeHm(root.querySelector('#f-off')?.value || '')
     form.onTime   = normalizeHm(root.querySelector('#f-on')?.value  || '')
     form.inTime   = normalizeHm(root.querySelector('#f-in')?.value  || '')
+    const actualDate = _utcDateFromRosterUtcTime(form.rosterDate, form.offTime || form.outTime)
+    if (actualDate) {
+      form.date = actualDate
+      const dateEl = root.querySelector('#f-date')
+      if (dateEl) dateEl.value = actualDate
+    }
     const nightRaw = root.querySelector('#f-night')?.value
     if (nightRaw && isValidHm(nightRaw)) {
       form.nightTime = diffMin('00:00', normalizeHm(nightRaw))

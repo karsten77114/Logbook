@@ -271,6 +271,22 @@ function _trackDateCandidates(f) {
   add(date)
   return dates
 }
+function _actualUtcDateForFlight(f) {
+  if (!f.rosterDate) return f.date
+  const depMin = _hmToMin(f.offTime || f.outTime)
+  if (depMin == null) return f.date
+  // UTC 16:00-23:59 maps to the next local roster date (UTC+8);
+  // UTC 00:00-15:59 is the same local roster date.
+  return depMin >= 16 * 60 ? _addDaysIso(f.rosterDate, -1) : f.rosterDate
+}
+function _dateAfterActualTimeEdit(f, date, outTime, offTime) {
+  return _actualUtcDateForFlight({
+    ...f,
+    date,
+    outTime,
+    offTime,
+  }) || date
+}
 
 async function fetchTrackFR24ForFlight(f) {
   let best = null
@@ -299,7 +315,8 @@ async function tryFetchTrack(root, f, flightId, opts = {}) {
     wrap.innerHTML = `<div style="color:var(--text-faint);font-size:13px;text-align:center;padding:24px">
       ⏳ Fetching ADS-B track…</div>`
 
-    const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
+    const trackDate = _actualUtcDateForFlight(f)
+    const { begin, midpoint } = getTimeRange(trackDate, f.offTime, f.onTime)
     const tooOld = (Date.now() / 1000 - begin) > 30 * 86400
 
     // Strategy 1: OpenSky (direct browser + Worker proxy)
@@ -720,7 +737,8 @@ export async function backgroundFetchAndSaveTrack(uid, flightId, f) {
   if (f.flightTime === 0 && f.offTime === '00:00' && f.onTime === '00:00') return
 
   const icao24 = (f.icao24 || FLEET[f.registration]?.icao24 || '').trim().toLowerCase()
-  const { begin, midpoint } = getTimeRange(f.date, f.offTime, f.onTime)
+  const trackDate = _actualUtcDateForFlight(f)
+  const { begin, midpoint } = getTimeRange(trackDate, f.offTime, f.onTime)
   const tooOld = (Date.now() / 1000 - begin) > 30 * 86400
 
   let track = null
@@ -938,13 +956,17 @@ function showEditSheet(root, f, flightId) {
       toggleVals[row.dataset.key] = row.dataset.val === '1'
     })
 
+    const nextDate = overlay.querySelector('#ef-date').value || f.date
+    const nextOut  = isValidHm(outV) ? normalizeHm(outV) : f.outTime
+    const nextOff  = isValidHm(offV) ? normalizeHm(offV) : f.offTime
+
     const changes = {
-      date:               overlay.querySelector('#ef-date').value    || f.date,
+      date:               _dateAfterActualTimeEdit(f, nextDate, nextOut, nextOff),
       flightNumber:       (overlay.querySelector('#ef-fn').value    || '').toUpperCase() || f.flightNumber,
       from:               (overlay.querySelector('#ef-from').value  || '').toUpperCase() || f.from,
       to:                 (overlay.querySelector('#ef-to').value    || '').toUpperCase() || f.to,
-      outTime:            isValidHm(outV)  ? normalizeHm(outV)  : f.outTime,
-      offTime:            isValidHm(offV)  ? normalizeHm(offV)  : f.offTime,
+      outTime:            nextOut,
+      offTime:            nextOff,
       onTime:             isValidHm(onV)   ? normalizeHm(onV)   : f.onTime,
       inTime:             isValidHm(inV)   ? normalizeHm(inV)   : f.inTime,
       blockTime,
