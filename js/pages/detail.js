@@ -428,9 +428,14 @@ function _planeIcon(hdg) {
 // ── Map ────────────────────────────────────────
 
 function _initMap(wrap) {
+  if (wrap._trackMap) {
+    wrap._trackMap.remove()
+    wrap._trackMap = null
+  }
   wrap.innerHTML = `<div id="track-map" style="height:240px;border-radius:var(--radius)"></div>`
   const map = L.map('track-map', { zoomControl: false, attributionControl: false })
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map)
+  wrap._trackMap = map
   return map
 }
 
@@ -505,13 +510,22 @@ function renderCharts(root, track) {
   const card = root.querySelector('#charts-card')
   if (card) card.classList.remove('hidden')
 
-  const sample  = track.filter((_, i) => i % 5 === 0)
+  const step = Math.max(1, Math.ceil(track.length / 180))
+  const sample = track.filter((_, i) => i % step === 0)
+  const last = track[track.length - 1]
+  if (sample[sample.length - 1] !== last) sample.push(last)
   const labels  = sample.map(p => {
     const d = new Date(p.t * 1000)
     return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}`
   })
 
-  const ctx = root.querySelector('#chart-combined')?.getContext('2d')
+  const canvas = root.querySelector('#chart-combined')
+  if (!canvas) return { chart: null, sample }
+
+  const existing = Chart.getChart?.(canvas)
+  if (existing) existing.destroy()
+
+  const ctx = canvas.getContext('2d')
   if (!ctx) return { chart: null, sample }
 
   const chart = new Chart(ctx, {
@@ -562,12 +576,36 @@ function renderCharts(root, track) {
 
 // ── Timeline ───────────────────────────────────
 
+function _indexForTrackTime(track, ts) {
+  if (!track?.length) return 0
+  if (ts <= track[0].t) return 0
+  if (ts >= track[track.length - 1].t) return track.length - 1
+
+  let lo = 0
+  let hi = track.length - 1
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (track[mid].t < ts) lo = mid + 1
+    else hi = mid
+  }
+
+  const prev = Math.max(0, lo - 1)
+  return Math.abs(track[prev].t - ts) <= Math.abs(track[lo].t - ts) ? prev : lo
+}
+
+function _sampleIndexForTime(sample, ts) {
+  return _indexForTrackTime(sample, ts)
+}
+
 function initTimeline(root, track, mapObjs, chartObjs) {
   const tl = root.querySelector('#track-timeline')
   if (!tl) return
   tl.classList.remove('hidden')
 
-  const slider = root.querySelector('#tl-slider')
+  const currentSlider = root.querySelector('#tl-slider')
+  const slider = currentSlider.cloneNode(true)
+  currentSlider.replaceWith(slider)
+
   const tlTime = root.querySelector('#tl-time')
   const tlAlt  = root.querySelector('#tl-alt')
   const tlSpd  = root.querySelector('#tl-spd')
@@ -575,7 +613,7 @@ function initTimeline(root, track, mapObjs, chartObjs) {
   const tlArr  = root.querySelector('#tl-arr')
 
   slider.min = 0
-  slider.max = track.length - 1
+  slider.max = 1000
   slider.value = 0
 
   const fmtUTC = ts => {
@@ -588,9 +626,14 @@ function initTimeline(root, track, mapObjs, chartObjs) {
   const { marker, flownLine } = mapObjs
   const { chart, sample } = chartObjs || {}
   const sampleLen = sample?.length || 1
+  const startTs = track[0].t
+  const endTs   = track[track.length - 1].t
+  const spanSec = Math.max(1, endTs - startTs)
 
-  function update(rawIdx) {
-    const idx = Math.max(0, Math.min(rawIdx, track.length - 1))
+  function update(rawValue) {
+    const value = Math.max(0, Math.min(rawValue, 1000))
+    const cursorTs = startTs + spanSec * (value / 1000)
+    const idx = _indexForTrackTime(track, cursorTs)
     const pt  = track[idx]
 
     // Map: rotate plane via DOM (avoids re-creating Leaflet icon element each tick)
@@ -611,7 +654,7 @@ function initTimeline(root, track, mapObjs, chartObjs) {
     tlSpd.textContent  = `${pt.s} kts`
 
     // Combined chart cursor
-    const si = Math.min(Math.floor(idx / 5), sampleLen - 1)
+    const si = sample?.length ? _sampleIndexForTime(sample, pt.t) : Math.min(idx, sampleLen - 1)
     if (chart) { chart._cursorIdx = si; chart.draw() }
   }
 
