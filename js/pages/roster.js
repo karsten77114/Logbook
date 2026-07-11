@@ -91,6 +91,12 @@ function _injectStyles() {
       width:5px; height:5px; border-radius:50%;
       background:var(--color-primary,#60a5fa); margin-top:3px;
     }
+    .roster-update-bar {
+      height:32px; line-height:32px; text-align:center;
+      font-size:12px; color:var(--color-text-secondary);
+      background:var(--bg-card,var(--color-surface));
+      border-radius:8px; margin-bottom:8px;
+    }
   `
   document.head.appendChild(s)
 }
@@ -183,22 +189,33 @@ function _utcDateFromRosterLocal(rosterDs, stdLocal) {
 }
 
 // ── Worker fetch ──────────────────────────────
-async function fetchRoster(employeeId, password) {
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
-  try {
-    const resp = await fetch(`${ROSTER_SERVICE_URL}/roster`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ employeeId, password }),
-      signal: ctrl.signal,
-    })
-    const data = await resp.json()
-    if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
-    return data
-  } finally {
-    clearTimeout(timer)
-  }
+// In-flight 去重：warmRosterCache / doFetch / getLatestUnloggedLeg /
+// getRecentLegsForPicker 皆同一使用者、同參數，過期視窗內天然共用同一請求，
+// 避免對 PegaSys（有反濫用封鎖前科）發併發抓取。
+let _rosterInflight = null
+function fetchRoster(employeeId, password) {
+  if (_rosterInflight) return _rosterInflight
+  _rosterInflight = (async () => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
+    try {
+      const resp = await fetch(`${ROSTER_SERVICE_URL}/roster`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, password }),
+        signal: ctrl.signal,
+      })
+      const data = await resp.json()
+      if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+      return data
+    } finally {
+      clearTimeout(timer)
+    }
+  })()
+  // .finally 的衍生 promise 需自行吞掉 rejection（原 promise 由呼叫端處理），
+  // 否則 fetch 失敗時會多報一次 unhandled rejection
+  _rosterInflight.finally(() => { _rosterInflight = null }).catch(() => {})
+  return _rosterInflight
 }
 
 // 按需抓「某 activity」的在線駕駛艙 crew（Add Flight 自動帶入用）。
@@ -373,6 +390,7 @@ let _calMonth = new Date().getMonth()   // 0-indexed
 let _pairings = []
 let _selected = null                    // 'YYYYMMDD'
 let _myEmployeeId = ''                  // 用來在組員名單中標示自己
+let _showUpdateBar = false              // stale-while-revalidate：背景更新時顯示細更新列
 
 // ── 駕駛艙組員渲染 ────────────────────────────
 // cockpit 成員（PegaSys，已是在線駕駛艙、PIC 第一）：
@@ -543,6 +561,7 @@ function renderCalendar(scrollEl) {
 
   scrollEl.innerHTML = `
     <div style="padding:8px 12px 40px">
+      ${_showUpdateBar ? `<div id="roster-update-bar" class="roster-update-bar">↻ 班表更新中…</div>` : ''}
 
       <!-- 月份導航 -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -781,34 +800,99 @@ export async function renderRoster(root) {
 
 let _fetching = false
 
-async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefresh = false) {
-  if (_fetching) return
-
-  // Cache-first: render immediately from localStorage when not forcing a refresh
-  if (!forceRefresh) {
-    const cached = _rcGet(uid)
-    if (cached) {
-      _pairings = cached
-      _myEmployeeId = employeeId
-      await loadLoggedFlights(uid, cached)
-      const today = todayStr()
-      const upcoming = cached.filter(p => p.date >= today).sort((a, b) => a.date.localeCompare(b.date))
-      if (upcoming.length > 0) {
-        _calYear  = parseInt(upcoming[0].date.slice(0, 4))
-        _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
-      } else {
-        _calYear  = new Date().getFullYear()
-        _calMonth = new Date().getMonth()
-      }
-      _selected = cached.some(p => p.date === today) ? today : null
-      renderCalendar(scroll)
-      return
+// 把 pairings 套進月曆：先畫月曆（快），再背景查 Logbook 已記錄狀態後補上 ✓/⚠ 顏色。
+// loadLoggedFlights 有 5 分鐘 signature 快取，第二次重繪的重複呼叫很廉價。
+// _selected 是 module 變數，renderCalendar 整段重繪時會自然保留使用者剛點的日期。
+function _applyPairings(scroll, uid, pairings, employeeId, { preserveView = false } = {}) {
+  _pairings = pairings
+  _myEmployeeId = employeeId
+  const today = todayStr()
+  if (!preserveView) {
+    const upcoming = pairings.filter(p => p.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+    if (upcoming.length > 0) {
+      _calYear  = parseInt(upcoming[0].date.slice(0, 4))
+      _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
+    } else {
+      _calYear  = new Date().getFullYear()
+      _calMonth = new Date().getMonth()
     }
+    _selected = pairings.some(p => p.date === today) ? today : null
   }
+  const keepScroll = preserveView ? scroll.scrollTop : 0
+  renderCalendar(scroll)                       // 1) 月曆先畫
+  if (keepScroll) scroll.scrollTop = keepScroll
+  loadLoggedFlights(uid, pairings).then(() => { // 2) logged 標色後補
+    const s = scroll.scrollTop
+    renderCalendar(scroll)
+    scroll.scrollTop = s
+  }).catch(() => {})
+}
 
+// stale-while-revalidate 的背景抓取：已先顯示 stale 月曆 + 更新列，這裡靜默重抓。
+// 成功 → 更新快取 + 重繪 + toast；失敗 → 移除更新列 + 低調 toast（不蓋掉月曆）；401 → 清帳密 + 登入表單。
+async function _backgroundRefresh(scroll, refreshBtn, uid, employeeId, password) {
+  if (_fetching) return
   _fetching = true
   refreshBtn.disabled = true
   refreshBtn.textContent = '…'
+  try {
+    const result   = await fetchRoster(employeeId, password)
+    const pairings = result.pairings
+    const isReal   = Array.isArray(pairings) && pairings.length > 0 && pairings[0].date
+    if (isReal) {
+      _rcSet(uid, pairings)
+      _showUpdateBar = false
+      _applyPairings(scroll, uid, pairings, employeeId)
+      const futureCount = pairings.filter(p => p.date >= todayStr()).length
+      showToast(`✅ 班表已更新（${futureCount} 個出勤日）`)
+    } else {
+      // debug / 空班表：不覆蓋已顯示的 stale 月曆，只把更新列收掉
+      _showUpdateBar = false
+      scroll.querySelector('#roster-update-bar')?.remove()
+    }
+  } catch (e) {
+    _showUpdateBar = false
+    if (e.status === 401) {
+      await clearPegasysCreds(uid)
+      showToast('❌ 帳號或密碼已失效，請重新登入')
+      renderLoginForm(scroll, uid, (eid, pw) => doFetch(scroll, refreshBtn, uid, eid, pw, true))
+    } else {
+      scroll.querySelector('#roster-update-bar')?.remove()
+      showToast('⚠ 無法更新，顯示快取班表')
+    }
+  } finally {
+    _fetching = false
+    refreshBtn.disabled = false
+    refreshBtn.textContent = '↻'
+  }
+}
+
+async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefresh = false) {
+  if (_fetching) return
+
+  // 1) 新鮮快取命中（非 forceRefresh）→ 立即渲染月曆，不碰 PegaSys
+  const fresh = forceRefresh ? null : _rcGet(uid)
+  if (fresh) {
+    _showUpdateBar = false
+    _applyPairings(scroll, uid, fresh, employeeId)
+    return
+  }
+
+  // 2) stale-while-revalidate：有 last-good 班表（快取過期，或 forceRefresh）→
+  //    先顯示 stale + 更新列，背景抓新資料（forceRefresh 時保留當前檢視/捲動位置）
+  const stale = _rcGetStale(uid)
+  if (stale?.length) {
+    _showUpdateBar = true
+    _applyPairings(scroll, uid, stale, employeeId, { preserveView: forceRefresh })
+    _backgroundRefresh(scroll, refreshBtn, uid, employeeId, password)
+    return
+  }
+
+  // 3) 完全沒有任何快取（首次使用）→ 維持全螢幕 loading 流程
+  _fetching = true
+  refreshBtn.disabled = true
+  refreshBtn.textContent = '…'
+  _showUpdateBar = false
   renderRosterLoading(scroll)
 
   const slowTimer = setTimeout(() => {
@@ -824,32 +908,10 @@ async function doFetch(scroll, refreshBtn, uid, employeeId, password, forceRefre
     const isDebug  = !Array.isArray(pairings) && pairings?._debug === true
 
     if (isReal) {
-      _pairings = pairings
       _rcSet(uid, pairings)          // 更新 localStorage 快取
-      _myEmployeeId = employeeId     // 用於組員名單標示自己
+      _applyPairings(scroll, uid, pairings, employeeId)
 
-      // 查詢 Logbook：過去航班是否已記錄
-      await loadLoggedFlights(uid, pairings)
-
-      // 自動導航至最近有出勤的月份
-      const today    = todayStr()
-      const upcoming = pairings
-        .filter(p => p.date >= today)
-        .sort((a, b) => a.date.localeCompare(b.date))
-      if (upcoming.length > 0) {
-        _calYear  = parseInt(upcoming[0].date.slice(0, 4))
-        _calMonth = parseInt(upcoming[0].date.slice(4, 6)) - 1
-      } else {
-        _calYear  = new Date().getFullYear()
-        _calMonth = new Date().getMonth()
-      }
-
-      // 如果今天有執勤就自動選取
-      _selected = pairings.some(p => p.date === today) ? today : null
-
-      renderCalendar(scroll)
-
-      const futureCount = pairings.filter(p => p.date >= today).length
+      const futureCount = pairings.filter(p => p.date >= todayStr()).length
       showToast(`✅ 班表已更新（${futureCount} 個出勤日）`)
 
     } else if (isDebug) {

@@ -78,6 +78,8 @@ async function loadUserData(uid) {
   if (aircraftSettings) setAircraftSettings(aircraftSettings)
   setCustomAircraft(customAircraft)
 
+  // App 一開就 fire-and-forget 喚醒 Render（/health 不碰 PegaSys），等真正抓班表時已暖機
+  fetch('https://pegasys-fetch.onrender.com/health').catch(() => {})
   // 靜默暖機 Roster 快取（不等待，不阻塞登入流程）
   warmRosterCache(uid).catch(() => {})
 }
