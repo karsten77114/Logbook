@@ -14,11 +14,17 @@ import { FLEET, ALL_REGISTRATIONS, getTypeByReg }    from '../data/fleet.js'
 import { navigate, showToast }                       from '../app.js'
 import { showCountryPicker, getCountryName }         from '../data/countries.js'
 import { navIcon }                                   from '../ui/nav-icons.js'
+import { AIRPORTS }                                  from '../data/airports.js'
 
 // ── Module-level state ────────────────────────
 let _section    = 'flights'  // flights | crew | airplanes | experience
 let _allStats   = null       // cached stats
 let _allFlights = null       // cached all flights (avoid double-fetch)
+
+// 每個分頁各有獨立的搜尋字串：Flights 只搜航班（班號／機場／機號），Crew 只搜人。
+// （舊版兩邊共用 state.search 且兩個 listener 都綁在同一個 input 上，在 Crew 打字
+//  350ms 後會被 flights 的 handler 蓋掉整個清單）
+const _search = { flights: '', crew: '' }
 
 const SECTIONS = [
   { id: 'flights',    label: 'Flights',    icon: '✈' },
@@ -90,10 +96,10 @@ function buildShell() {
           </div>`).join('')}
       </div>
 
-      <!-- Search (Flights only) -->
+      <!-- Search (Flights / Crew — 各自獨立，placeholder 依分頁切換) -->
       <div class="search-bar" id="search-bar" style="display:none">
         <input class="search-input" id="search-input" type="search"
-               placeholder="Flight, airport, crew…" autocomplete="off">
+               placeholder="Flight no. or airport…" autocomplete="off">
       </div>
 
       <!-- Content -->
@@ -201,12 +207,18 @@ function renderSection(root) {
     topAdd.style.pointerEvents = showBtn ? '' : 'none'
   }
 
-  // Update search placeholder & clear when switching between non-search sections
+  // 搜尋框依分頁換 placeholder，並還原「該分頁自己的」關鍵字（兩邊互不干擾）
   const searchInput = root.querySelector('#search-input')
   if (searchInput) {
-    if (isFlights)      searchInput.placeholder = 'Flight, airport, crew…'
-    else if (isCrewSec) searchInput.placeholder = 'Name, position…'
-    if (!isFlights && !isCrewSec) { searchInput.value = ''; state.search = '' }
+    if (isFlights) {
+      searchInput.placeholder = 'Flight no. or airport…'
+      searchInput.value = _search.flights
+    } else if (isCrewSec) {
+      searchInput.placeholder = 'Crew name…'
+      searchInput.value = _search.crew
+    } else {
+      searchInput.value = ''
+    }
   }
 
   // Route to section renderer
@@ -284,20 +296,32 @@ function renderStats(root, s) {
     </div>`).join('')
 }
 
+/** 機場比對：IATA 代碼、中文機場名、城市都算命中（例：搜「桃園」也找得到 TPE） */
+function _airportMatches(iata, q) {
+  const code = (iata || '').toLowerCase()
+  if (!code) return false
+  if (code.includes(q)) return true
+  const ap = AIRPORTS[(iata || '').toUpperCase()]
+  if (!ap) return false
+  return (ap.name || '').toLowerCase().includes(q) ||
+         (ap.city || '').toLowerCase().includes(q)
+}
+
 function renderFlightsList(root, allFlights) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
 
-  const q = (state.search || '').toLowerCase().trim()
+  const q = _search.flights.toLowerCase().trim()
   let flights = allFlights || []
   if (q) {
+    // Flights 只搜「航班本身」：班號、機場（代碼／中文名／城市）、機號、機型。
+    // 人名請到 Crew 分頁搜——兩邊分開，不再混在一起。
     flights = flights.filter(f =>
-      (f.from         || '').toLowerCase().includes(q) ||
-      (f.to           || '').toLowerCase().includes(q) ||
       (f.flightNumber || '').toLowerCase().includes(q) ||
-      (f.aircraftType || '').toLowerCase().includes(q) ||
+      _airportMatches(f.from, q) ||
+      _airportMatches(f.to,   q) ||
       (f.registration || '').toLowerCase().includes(q) ||
-      (f.crewNames    || []).some(n => n.toLowerCase().includes(q))
+      (f.aircraftType || '').toLowerCase().includes(q)
     )
   }
 
@@ -379,10 +403,14 @@ function flightRowHtml(f) {
 }
 
 function attachSearchFilter(root) {
+  const inp = root.querySelector('#search-input')
+  if (!inp || inp.dataset.flightsBound) return   // 只綁一次，避免重複 listener
+  inp.dataset.flightsBound = '1'
   let debounceTimer
-  root.querySelector('#search-input')?.addEventListener('input', e => {
+  inp.addEventListener('input', e => {
+    if (_section !== 'flights') return           // 不要在 Crew 分頁蓋掉人員清單
     clearTimeout(debounceTimer)
-    state.search = e.target.value
+    _search.flights = e.target.value
     debounceTimer = setTimeout(() => renderFlightsList(root, _allFlights || []), 350)
   })
 }
@@ -416,7 +444,7 @@ function _attachCrewSearch(root) {
   inp.addEventListener('input', e => {
     if (_section !== 'crew') return
     clearTimeout(timer)
-    state.search = e.target.value
+    _search.crew = e.target.value
     timer = setTimeout(() => _paintCrewList(root), 200)
   })
 }
@@ -424,15 +452,18 @@ function _attachCrewSearch(root) {
 function _paintCrewList(root) {
   const scroll = root.querySelector('#list-scroll')
   if (!scroll) return
-  const q = (state.search || '').toLowerCase().trim()
+  const q = _search.crew.toLowerCase().trim()
   let crew = state.crew || []
 
   if (q) {
-    crew = crew.filter(c =>
-      `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().includes(q) ||
-      (c.position    || '').toLowerCase().includes(q) ||
-      (c.employeeId  || '').toLowerCase().includes(q)
-    )
+    // Crew 只搜「人」：姓名（含反過來寫）與員編
+    crew = crew.filter(c => {
+      const first = (c.firstName || '').toLowerCase()
+      const last  = (c.lastName  || '').toLowerCase()
+      return `${first} ${last}`.includes(q) ||
+             `${last} ${first}`.includes(q) ||
+             (c.employeeId || '').toLowerCase().includes(q)
+    })
   }
 
   const active   = crew.filter(c => isCrewActive(c))

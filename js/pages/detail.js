@@ -8,6 +8,7 @@ import { invalidateStats }                        from './list.js'
 import { fmtDate, fmtDuration,
          diffMin, normalizeHm, isValidHm }        from '../utils/time.js'
 import { fetchTrack, getTimeRange }               from '../utils/opensky.js'
+import { detectRunway }                           from '../utils/runway.js'
 import { FLEET, APPROACH_TYPES,
          ALL_REGISTRATIONS, getTypeByReg }        from '../data/fleet.js'
 import { isAircraftActive }                       from '../state.js'
@@ -363,9 +364,9 @@ async function tryFetchTrack(root, f, flightId, opts = {}) {
       if (flightId) {
         updateFlight(state.user.uid, flightId, { flightTrack: track }).catch(() => {})
       }
-      // Auto-detect runway if not already set
-      if (!f.runway && flightId) {
-        autoDetectRunway(root, track, f.to, flightId)
+      // Auto-detect runway if not already set；使用者按 Refresh 則重新判定並覆蓋
+      if (flightId && (!f.runway || opts.force)) {
+        autoDetectRunway(root, track, f.to, flightId, { force: opts.force, current: f.runway })
       }
       if (opts.force) showToast('Flight track refreshed', 'success')
     } else {
@@ -670,90 +671,15 @@ function renderTrack(root, track) {
 }
 
 // ── Runway Detection ───────────────────────────
-
-/** Known runway configurations: IATA → [[designator, magnetic_heading], ...] */
-const RUNWAY_DB = {
-  TPE: [['05L',46],['05R',46],['23L',226],['23R',226]],
-  CGK: [['07L',72],['07R',72],['25L',252],['25R',252]],
-  UKB: [['09',88],['27',268]],
-  RMQ: [['18',178],['36',358]],
-  CEB: [['04',38],['22',218]],
-  MNL: [['06',58],['24',238],['13',131],['31',311]],
-  CRK: [['02',20],['20',200]],
-  DAD: [['17L',171],['17R',171],['35L',351],['35R',351]],
-  KUL: [['14L',136],['14R',136],['32L',316],['32R',316]],
-  FUK: [['16L',160],['16R',160],['34L',340],['34R',340]],
-  ITM: [['14L',136],['14R',136],['32L',316],['32R',316]],
-  KIX: [['06L',60],['06R',60],['24L',240],['24R',240]],
-  KMJ: [['07',74],['25',254]],
-  TAK: [['26',257],['08',77]],
-  OKA: [['18L',180],['18R',180],['36L',360],['36R',360]],
-  NGO: [['34L',340],['34R',340],['16L',160],['16R',160]],
-  NRT: [['16L',160],['16R',160],['34L',340],['34R',340]],
-  HND: [['05',50],['23',230],['16L',160],['16R',160],['34R',340]],
-  KHH: [['09L',90],['09R',90],['27L',270],['27R',270]],
-  NHA: [['02',19],['20',199]],   // Nha Trang
-  HAN: [['11L',106],['11R',106],['29L',286],['29R',286]],  // Hanoi
-  SGN: [['07L',72],['07R',72],['25L',252],['25R',252]],    // Ho Chi Minh
-  BKK: [['01L',9],['01R',9],['19L',189],['19R',189]],      // Bangkok Suvarnabhumi
-  SIN: [['02C',20],['02L',20],['02R',20],['20C',200],['20L',200],['20R',200]], // Singapore
-  ICN: [['15L',146],['15R',146],['33L',326],['33R',326],['16',160],['34',340]], // Seoul Incheon
-  PVG: [['16L',160],['16R',160],['34L',340],['34R',340]],  // Shanghai Pudong
-}
-
-/**
- * Detect landing runway from ADS-B track using final approach bearing.
- * @param {Array} track [{t,la,lo,a,s}]
- * @param {string} destIata destination IATA code
- * @returns {string|null} runway designator (e.g. '23L', '27') or null
- */
-function detectRunway(track, destIata) {
-  if (!track?.length) return null
-
-  // Find last airborne point (altitude > 100 ft)
-  let lastAirIdx = -1
-  for (let i = track.length - 1; i >= 0; i--) {
-    if (track[i].a > 100) { lastAirIdx = i; break }
-  }
-  if (lastAirIdx < 5) return null
-
-  // Final approach: 3 min before touchdown, below 3000 ft
-  const tLand = track[lastAirIdx].t
-  const approach = track.filter(p =>
-    p.t >= tLand - 180 && p.t <= tLand && p.a < 3000 && p.a > 50
-  )
-  if (approach.length < 5) return null
-
-  // Circular mean bearing
-  let sinS = 0, cosS = 0
-  for (let i = 1; i < approach.length; i++) {
-    const r = _bearing(approach[i - 1], approach[i]) * Math.PI / 180
-    sinS += Math.sin(r); cosS += Math.cos(r)
-  }
-  const avgBearing = (Math.atan2(sinS, cosS) * 180 / Math.PI + 360) % 360
-
-  // Match against known runways (within ±20°)
-  const runways = RUNWAY_DB[destIata?.toUpperCase()]
-  if (runways) {
-    let best = null, bestDiff = 999
-    for (const [name, hdg] of runways) {
-      const diff = Math.abs(((avgBearing - hdg + 540) % 360) - 180)
-      if (diff < bestDiff && diff < 20) { best = name; bestDiff = diff }
-    }
-    if (best) return best
-  }
-
-  // Fallback: heading-based runway number (no L/R suffix)
-  const rwyNum = Math.round(avgBearing / 10) % 36 || 36
-  return String(rwyNum).padStart(2, '0')
-}
+// 判定邏輯在 js/utils/runway.js（可用 node 單獨測試）
 
 /**
  * Detect runway, update UI, and persist to Firestore if not already set.
  */
-async function autoDetectRunway(root, track, destIata, flightId) {
+async function autoDetectRunway(root, track, destIata, flightId, opts = {}) {
   const detected = detectRunway(track, destIata)
   if (!detected) return
+  if (opts.current && detected === opts.current) return   // 已經一樣，不用重寫
 
   // Update UI
   const el = root.querySelector('#det-runway')
@@ -766,6 +692,7 @@ async function autoDetectRunway(root, track, destIata, flightId) {
   // Persist to Firestore
   try {
     await updateFlight(state.user.uid, flightId, { runway: detected })
+    if (opts.force && opts.current) showToast(`Runway 重新判定為 ${detected}`, 'success')
   } catch (e) {
     console.warn('[Runway] Firestore update failed:', e.message)
   }

@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v98'
+const CACHE = 'logbook-v99'
 const PRECACHE = [
   './',
   './index.html',
@@ -21,10 +21,12 @@ const PRECACHE = [
   './js/ui/nav-icons.js',
   './js/utils/time.js',
   './js/utils/nighttime.js',
+  './js/utils/runway.js',
   './js/data/fleet.js',
   './js/data/airports.js',
   './js/data/airlines.js',
   './js/data/countries.js',
+  './js/data/runways.js',
   './tools/import.html',
 ]
 

@@ -16,7 +16,7 @@ export const state = {
   flightPages: 0,
   currentPage: 0,
   filters:     {},
-  search:      '',
+  // search 已移除：Flights / Crew 各自在 list.js 內維護獨立的搜尋字串
 }
 
 export function setUser(u)               { state.user             = u }

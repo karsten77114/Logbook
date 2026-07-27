@@ -152,9 +152,21 @@ function _promptPrefilledCrew(rc) {
             ${posOpts.map(p => `<option value="${p}"${p === pos ? ' selected' : ''}>${p}</option>`).join('')}
           </select>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Employee ID</label>
+            <input class="form-input mono" id="pf-empid" type="text" value="${esc(rc.staffId)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Licence No.</label>
+            <input class="form-input mono" id="pf-lic" type="text">
+          </div>
+        </div>
         <div class="form-group">
-          <label class="form-label">Employee ID</label>
-          <input class="form-input mono" id="pf-empid" type="text" value="${esc(rc.staffId)}">
+          <label class="form-label">Nationality</label>
+          <button class="form-picker-btn" id="pf-nat-btn" type="button">
+            <span id="pf-nat-display" style="color:var(--text-faint)">Tap to select…</span>
+          </button>
         </div>
         <div style="display:flex;gap:10px;margin-top:8px">
           <button class="btn" id="pf-skip" style="flex:1">略過</button>
@@ -162,6 +174,20 @@ function _promptPrefilledCrew(rc) {
         </div>
       </div>`
     document.body.appendChild(overlay)
+
+    // 國籍選擇器（與 Crew 頁 Edit 相同欄位，之後不必再補建檔）
+    let _natCode = ''
+    overlay.querySelector('#pf-nat-btn').addEventListener('click', () => {
+      showCountryPicker(_natCode, (code, name) => {
+        _natCode = code
+        const flag = [...code].map(x => String.fromCodePoint(0x1F1E6 + x.charCodeAt(0) - 65)).join('')
+        const display = overlay.querySelector('#pf-nat-display')
+        if (display) {
+          display.textContent = `${flag}  ${name}`
+          display.style.color = 'var(--text)'
+        }
+      })
+    })
 
     const close = (val) => { overlay.remove(); resolve(val) }
     overlay.querySelector('#pf-skip').addEventListener('click', () => close(null))
@@ -171,11 +197,17 @@ function _promptPrefilledCrew(rc) {
       const last  = (overlay.querySelector('#pf-last').value  || '').trim()
       const posv  = overlay.querySelector('#pf-pos').value
       const empId = (overlay.querySelector('#pf-empid').value || '').trim()
+      const lic   = (overlay.querySelector('#pf-lic').value   || '').trim()
       if (!first && !last) { showToast('Name is required', 'error'); return }
       const existing = (state.crew || []).find(c => c.employeeId && c.employeeId === empId)
       if (existing) { close(existing); return }   // 員編已存在 → 用既有，不重複建檔
       const id = `crew_${Date.now()}`
-      const data = { firstName: first, lastName: last, position: posv, active: true, ...(empId && { employeeId: empId }) }
+      const data = {
+        firstName: first, lastName: last, position: posv, active: true,
+        ...(empId    && { employeeId: empId }),
+        ...(lic      && { licenceNumber: lic }),
+        ...(_natCode && { nationality: _natCode }),
+      }
       try {
         await saveCrew(state.user.uid, id, data)
         const obj = { id, ...data }
