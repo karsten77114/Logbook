@@ -80,11 +80,15 @@ export function detectRunway(track, destIata) {
     approach = track.filter(p => p.t >= tLand - 420 && p.t <= tLand && p.a < 5000 && p.a > 50)
   }
   if (approach.length < 3) return null
+  approach.sort((a, b) => a.t - b.t)   // 方向判定靠時間序，別假設來源已排好
 
-  // 進場平均航跡（真方位，circular mean）
+  // 最後 90 秒的航跡方位（真方位）。刻意不用整段進場平均：OKA 這種在進場段才轉上
+  // 最後進場的，整段平均會被 base leg 拉歪 30° 以上，害正確的跑道被濾掉。
+  const finalSeg  = approach.filter(p => p.t >= tLand - 90)
+  const forBearing = finalSeg.length >= 3 ? finalSeg : approach
   let sinS = 0, cosS = 0
-  for (let i = 1; i < approach.length; i++) {
-    const r = bearingDeg(approach[i - 1], approach[i]) * D2R
+  for (let i = 1; i < forBearing.length; i++) {
+    const r = bearingDeg(forBearing[i - 1], forBearing[i]) * D2R
     sinS += Math.sin(r); cosS += Math.cos(r)
   }
   const avgBearing = (Math.atan2(sinS, cosS) / D2R + 360) % 360
@@ -93,16 +97,18 @@ export function detectRunway(track, destIata) {
   let best = null, bestCross = Infinity
   for (const rw of runways) {
     if (rw.lat == null) continue
-    if (angDiff(avgBearing, rw.hdg) > 30) continue      // 航向對不上就跳過
-    // 只取「門檻外 15 km 內～門檻後 2 km」的點，避免用到 downwind/base
-    const seg = approach
-      .map(p => trackOffsets(p, rw.lat, rw.lon, rw.hdg))
-      .filter(o => o.along > -15000 && o.along < 2000)
+    if (angDiff(avgBearing, rw.hdg) > 45) continue      // 寬鬆的方位 sanity check
+    const offs = approach.map(p => trackOffsets(p, rw.lat, rw.lon, rw.hdg))
+    // 只取「門檻外 12 km 內～門檻後 2.5 km」的點，避免用到 downwind/base
+    const seg = offs.filter(o => o.along > -12000 && o.along < 2500)
     if (seg.length < 3) continue
-    // 取最靠近門檻的一半算中位數偏移（越靠近越能分辨平行跑道）
-    seg.sort((a, b) => b.along - a.along)
-    const near = seg.slice(0, Math.max(3, Math.ceil(seg.length / 2)))
-                    .map(o => o.cross).sort((a, b) => a - b)
+    // 方向判定：沿跑道距離必須隨時間遞增（真的朝這個門檻飛進去）。
+    // 同一條跑道的反向端會遞減 → 自動排除 05R/23L 這種對向誤判。
+    if (seg[seg.length - 1].along <= seg[0].along) continue
+    // 側向偏移取最靠近門檻的一半算中位數（越靠近越能分辨平行跑道）
+    const near = [...seg].sort((a, b) => b.along - a.along)
+                         .slice(0, Math.max(3, Math.ceil(seg.length / 2)))
+                         .map(o => o.cross).sort((a, b) => a - b)
     const median = near[Math.floor(near.length / 2)]
     if (median < bestCross) { bestCross = median; best = rw.id }
   }
