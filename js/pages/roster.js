@@ -214,6 +214,26 @@ function _hmToMin(s) {
   const mm = parseInt(v.slice(-2), 10)
   return hh * 60 + mm
 }
+function _nowLocalMin() {
+  const hhmm = new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16)
+  return _hmToMin(hhmm)
+}
+function _rosterLegEndMin(leg) {
+  const dep = _hmToMin(leg?.std_local || leg?.stdLocal)
+  let arr = _hmToMin(leg?.sta_local || leg?.staLocal)
+  if (arr == null && dep != null && Number.isFinite(leg?.blockTime)) {
+    arr = dep + leg.blockTime
+  }
+  if (arr == null) return null
+  if (dep != null && arr < dep) arr += 24 * 60
+  return arr
+}
+function _isRosterLegCompletedOnDate(leg, rosterDs, today = todayStr(), nowMin = _nowLocalMin()) {
+  if (rosterDs < today) return true
+  if (rosterDs > today) return false
+  const endMin = _rosterLegEndMin(leg)
+  return endMin != null && nowMin != null && nowMin >= endMin
+}
 function _loggedKeysForFlight(f) {
   const fn = (f.flightNumber || '').replace(/^JX/i, '')
   const dateKey = _toDs(f.date)
@@ -447,9 +467,13 @@ let _loggedFlights = new Map()
 async function loadLoggedFlights(uid, pairings) {
   const today  = todayStr()
   const cutoff = _daysAgo(PAST_DAYS_LIMIT)   // 90 天前，不追蹤更舊的
+  const nowMin = _nowLocalMin()
 
-  // 只查最近 90 天的過去出勤日
-  const past = pairings.filter(p => p.date < today && p.date >= cutoff)
+  // 查最近 90 天的過去出勤日；今天只在至少一段已完成後才納入。
+  const past = pairings.filter(p =>
+    p.date >= cutoff &&
+    (p.date < today || (p.date === today && (p.legs || []).some(lg => _isRosterLegCompletedOnDate(lg, p.date, today, nowMin))))
+  )
   if (past.length === 0) { _loggedFlights = new Map(); return }
 
   // fingerprint：過去出勤日清單（歷史班表固定，可長效快取）
@@ -609,6 +633,7 @@ export function invalidateRosterLoggedFlights() {
 function renderCalendar(scrollEl) {
   _injectStyles()
   const today = todayStr()
+  const nowMin = _nowLocalMin()
   const year  = _calYear
   const month = _calMonth
 
@@ -629,14 +654,15 @@ function renderCalendar(scrollEl) {
 
     const allLegs = hasDuty ? ps.flatMap(p => p.legs) : []
 
-    // 每個腿的顏色：過去→看 _loggedFlights；今天/未來→藍色；90 天外→灰色不追蹤
+    // 每個腿的顏色：已完成→看 _loggedFlights；未完成/未來→預設色；90 天外→灰色不追蹤。
     const cutoff = _daysAgo(PAST_DAYS_LIMIT)
     let fnBadges = ''
     if (hasDuty) {
       for (const lg of allLegs.slice(0, 2)) {
         const fn  = lg.flightNumber.replace(/^JX/i, '')
         let cls = 'cal-fn-future'
-        if (isPast) {
+        const isTrackable = _isRosterLegCompletedOnDate(lg, ds, today, nowMin)
+        if (isTrackable) {
           if (ds < cutoff) {
             cls = 'cal-fn-old'   // 超過 90 天，不追蹤
           } else {
@@ -671,7 +697,7 @@ function renderCalendar(scrollEl) {
       const rows = legs.map(lg => {
         const fn       = lg.flightNumber.replace(/^JX/i, '')
         const key      = `${_selected}_${fn}`
-        const inWindow = isPast && _selected >= cutoff   // 90 天內才追蹤
+        const inWindow = _selected >= cutoff && _isRosterLegCompletedOnDate(lg, _selected, today, nowMin)
         const logged   = inWindow && _loggedFlights.has(key)
         const unlogged = inWindow && !_loggedFlights.has(key)
         const fId      = _loggedFlights.get(key)
