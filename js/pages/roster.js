@@ -231,8 +231,13 @@ function _rosterLegEndMin(leg) {
 function _isRosterLegCompletedOnDate(leg, rosterDs, today = todayStr(), nowMin = _nowLocalMin()) {
   if (rosterDs < today) return true
   if (rosterDs > today) return false
+  const depMin = _hmToMin(leg?.std_local || leg?.stdLocal)
   const endMin = _rosterLegEndMin(leg)
-  return endMin != null && nowMin != null && nowMin >= endMin
+  if (endMin != null && nowMin != null && nowMin >= endMin) return true
+  // Same-day roster status should still enter logged/unlogged matching once
+  // the leg has departed. Some PegaSys payloads expose the visible arrival
+  // time in a display-only shape, while STD is consistently parsed.
+  return depMin != null && nowMin != null && nowMin >= depMin
 }
 function _loggedKeysForFlight(f) {
   const fn = (f.flightNumber || '').replace(/^JX/i, '')
