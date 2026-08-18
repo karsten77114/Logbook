@@ -218,26 +218,12 @@ function _nowLocalMin() {
   const hhmm = new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16)
   return _hmToMin(hhmm)
 }
-function _rosterLegEndMin(leg) {
-  const dep = _hmToMin(leg?.std_local || leg?.stdLocal)
-  let arr = _hmToMin(leg?.sta_local || leg?.staLocal)
-  if (arr == null && dep != null && Number.isFinite(leg?.blockTime)) {
-    arr = dep + leg.blockTime
-  }
-  if (arr == null) return null
-  if (dep != null && arr < dep) arr += 24 * 60
-  return arr
-}
-function _isRosterLegCompletedOnDate(leg, rosterDs, today = todayStr(), nowMin = _nowLocalMin()) {
+function _isRosterLegTrackableOnDate(leg, rosterDs, today = todayStr(), nowMin = _nowLocalMin()) {
   if (rosterDs < today) return true
   if (rosterDs > today) return false
   const depMin = _hmToMin(leg?.std_local || leg?.stdLocal)
-  const endMin = _rosterLegEndMin(leg)
-  if (endMin != null && nowMin != null && nowMin >= endMin) return true
-  // Same-day roster status should still enter logged/unlogged matching once
-  // the leg has departed. Some PegaSys payloads expose the visible arrival
-  // time in a display-only shape, while STD is consistently parsed.
-  return depMin != null && nowMin != null && nowMin >= depMin
+  if (depMin == null || nowMin == null) return true
+  return nowMin >= depMin
 }
 function _loggedKeysForFlight(f) {
   const fn = (f.flightNumber || '').replace(/^JX/i, '')
@@ -508,7 +494,7 @@ async function loadLoggedFlights(uid, pairings) {
   // 查最近 90 天的過去出勤日；今天只在至少一段已完成後才納入。
   const past = pairings.filter(p =>
     p.date >= cutoff &&
-    (p.date < today || (p.date === today && (p.legs || []).some(lg => _isRosterLegCompletedOnDate(lg, p.date, today, nowMin))))
+    (p.date < today || (p.date === today && (p.legs || []).some(lg => _isRosterLegTrackableOnDate(lg, p.date, today, nowMin))))
   )
   if (past.length === 0) { _loggedFlights = new Map(); return }
 
@@ -696,7 +682,7 @@ function renderCalendar(scrollEl) {
       for (const lg of allLegs.slice(0, 2)) {
         const fn  = lg.flightNumber.replace(/^JX/i, '')
         let cls = 'cal-fn-future'
-        const isTrackable = _isRosterLegCompletedOnDate(lg, ds, today, nowMin)
+        const isTrackable = _isRosterLegTrackableOnDate(lg, ds, today, nowMin)
         if (isTrackable) {
           if (ds < cutoff) {
             cls = 'cal-fn-old'   // 超過 90 天，不追蹤
@@ -731,7 +717,7 @@ function renderCalendar(scrollEl) {
       const cutoff = _daysAgo(PAST_DAYS_LIMIT)
       const rows = legs.map(lg => {
         const fn       = lg.flightNumber.replace(/^JX/i, '')
-        const inWindow = _selected >= cutoff && _isRosterLegCompletedOnDate(lg, _selected, today, nowMin)
+        const inWindow = _selected >= cutoff && _isRosterLegTrackableOnDate(lg, _selected, today, nowMin)
         const fId      = inWindow ? _loggedFlightIdForRosterLeg(_selected, lg) : null
         const logged   = Boolean(fId)
         const unlogged = inWindow && !fId
