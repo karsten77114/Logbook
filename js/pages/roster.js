@@ -208,7 +208,7 @@ function _toDs(s) {
   return (s || '').replace(/-/g, '')
 }
 function _hmToMin(s) {
-  const v = (s || '').replace(':', '')
+  const v = String(s || '').replace(/\D/g, '')
   if (!/^\d{3,4}$/.test(v)) return null
   const hh = parseInt(v.length === 4 ? v.slice(0, 2) : v.slice(0, 1), 10)
   const mm = parseInt(v.slice(-2), 10)
@@ -239,9 +239,16 @@ function _loggedKeysForFlight(f) {
   const dateKey = _toDs(f.date)
   if (!dateKey || !fn) return []
 
+  const route = `${(f.from || '').toUpperCase()}_${(f.to || '').toUpperCase()}`
+  const routeOk = route !== '_'
   const keys = new Set([`${dateKey}_${fn}`])
+  if (routeOk) keys.add(`${dateKey}_${fn}_${route}`)
+
   const rosterDateKey = _toDs(f.rosterDate)
-  if (rosterDateKey) keys.add(`${rosterDateKey}_${fn}`)
+  if (rosterDateKey) {
+    keys.add(`${rosterDateKey}_${fn}`)
+    if (routeOk) keys.add(`${rosterDateKey}_${fn}_${route}`)
+  }
 
   // Logbook date is UTC, while PegaSys roster dates are local duty dates.
   // Early local departures such as 07:20L Taiwan depart after 16:00Z on
@@ -249,8 +256,32 @@ function _loggedKeysForFlight(f) {
   const depMin = _hmToMin(f.offTime || f.outTime)
   if (depMin != null && depMin >= 16 * 60) {
     keys.add(`${_addDaysDs(dateKey, 1)}_${fn}`)
+    if (routeOk) keys.add(`${_addDaysDs(dateKey, 1)}_${fn}_${route}`)
+  } else if (routeOk && !rosterDateKey) {
+    // Manual/legacy records may have the UTC date but no OOOI times yet.
+    // Route-scoped +1 avoids most false positives while still matching
+    // early local departures like TPE-CGK JX761 shown under the next local day.
+    keys.add(`${_addDaysDs(dateKey, 1)}_${fn}_${route}`)
   }
   return [...keys]
+}
+function _loggedKeysForRosterLeg(rosterDs, leg) {
+  const fn = (leg.flightNumber || '').replace(/^JX/i, '')
+  if (!rosterDs || !fn) return []
+  const keys = [`${rosterDs}_${fn}`]
+  const route = `${(leg.dep || leg.from || '').toUpperCase()}_${(leg.dest || leg.to || '').toUpperCase()}`
+  if (route !== '_') keys.push(`${rosterDs}_${fn}_${route}`)
+  return keys
+}
+function _loggedFlightIdForRosterLeg(rosterDs, leg) {
+  for (const key of _loggedKeysForRosterLeg(rosterDs, leg)) {
+    const id = _loggedFlights.get(key)
+    if (id) return id
+  }
+  return null
+}
+function _isRosterLegLogged(rosterDs, leg) {
+  return Boolean(_loggedFlightIdForRosterLeg(rosterDs, leg))
 }
 function _utcDateFromRosterLocal(rosterDs, stdLocal) {
   const hhmm = (stdLocal || '').replace(':', '')
@@ -379,7 +410,7 @@ function _recentUnloggedDepartedLegs(pairings) {
       stdLocal:     lg.std_local || '',
       blockTime:    lg.blockTime || 0,
       activityId:   lg.activityId || p.activityId || null,
-      logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
+      logged:       _isRosterLegLogged(p.date, lg),
     })))
     .filter(leg => !leg.logged && _isRosterLegDeparted(leg, today, nowHhmm))
     .sort((a, b) => {
@@ -542,8 +573,7 @@ export async function getLatestUnloggedLeg(uid) {
     .sort((a, b) => b.date.localeCompare(a.date))
 
   for (const lg of candidates) {
-    const fn = lg.flightNumber.replace(/^JX/i, '')
-    if (!_loggedFlights.has(`${lg.date}_${fn}`)) {
+    if (!_isRosterLegLogged(lg.date, lg)) {
       return {
         flightNumber: lg.flightNumber,
         date:         _dsToIso(lg.date),
@@ -666,7 +696,7 @@ function renderCalendar(scrollEl) {
           if (ds < cutoff) {
             cls = 'cal-fn-old'   // 超過 90 天，不追蹤
           } else {
-            cls = _loggedFlights.has(`${ds}_${fn}`) ? 'cal-fn-logged' : 'cal-fn-unlogged'
+            cls = _isRosterLegLogged(ds, lg) ? 'cal-fn-logged' : 'cal-fn-unlogged'
           }
         }
         fnBadges += `<div class="cal-fn ${cls}">${fn}</div>`
@@ -696,11 +726,10 @@ function renderCalendar(scrollEl) {
       const cutoff = _daysAgo(PAST_DAYS_LIMIT)
       const rows = legs.map(lg => {
         const fn       = lg.flightNumber.replace(/^JX/i, '')
-        const key      = `${_selected}_${fn}`
         const inWindow = _selected >= cutoff && _isRosterLegCompletedOnDate(lg, _selected, today, nowMin)
-        const logged   = inWindow && _loggedFlights.has(key)
-        const unlogged = inWindow && !_loggedFlights.has(key)
-        const fId      = _loggedFlights.get(key)
+        const fId      = inWindow ? _loggedFlightIdForRosterLeg(_selected, lg) : null
+        const logged   = Boolean(fId)
+        const unlogged = inWindow && !fId
 
         // 補記 URL（預填 add wizard）
         const addUrl = `add?fn=${lg.flightNumber}&date=${p.date}` +
