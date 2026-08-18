@@ -19,7 +19,8 @@ import { renderDetail }          from './pages/detail.js'
 import { renderSettings }        from './pages/settings.js'
 import { renderRoster,
          warmRosterCache,
-         warmRosterService }      from './pages/roster.js'
+         warmRosterService,
+         warmAddFlightData }      from './pages/roster.js'
 import { renderCrewDetail }      from './pages/crew-detail.js'
 import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
@@ -83,12 +84,14 @@ async function loadUserData(uid) {
   warmRosterService().catch(() => {})
   // 靜默暖機 Roster 快取（不等待，不阻塞登入流程）
   warmRosterCache(uid).catch(() => {})
+  warmAddFlightData(uid).catch(() => {})
 }
 
 // App 回到前台時補刷 Roster 快取
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && state.user?.uid) {
     warmRosterCache(state.user.uid).catch(() => {})
+    warmAddFlightData(state.user.uid).catch(() => {})
   }
 })
 

@@ -22,6 +22,10 @@ const ROSTER_RETRY_MS   = 1200
 // ── Roster 快取（localStorage）────────────────
 const _RC_KEY = 'lb_roster_v1'
 const _RC_TTL = 45 * 60 * 1000  // 45 分鐘
+const _ENRICH_KEY = 'lb_add_enrich_v1'
+const _ENRICH_TTL = 24 * 60 * 60 * 1000
+const _ENRICH_PENDING_TTL = 5 * 60 * 1000
+const _ENRICH_MAX_LEGS = 4
 
 function _rcGet(uid) {
   try {
@@ -44,6 +48,35 @@ function _rcSet(uid, pairings) {
   try {
     localStorage.setItem(_RC_KEY, JSON.stringify({ uid, pairings, t: Date.now() }))
   } catch {}
+}
+
+function _enrichLoad(uid) {
+  try {
+    const c = JSON.parse(localStorage.getItem(_ENRICH_KEY) || 'null')
+    if (!c || c.uid !== uid) return { uid, items: {} }
+    return { uid, items: c.items || {} }
+  } catch {
+    return { uid, items: {} }
+  }
+}
+
+function _enrichSave(uid, cache) {
+  try {
+    localStorage.setItem(_ENRICH_KEY, JSON.stringify({ uid, items: cache.items || {} }))
+  } catch {}
+}
+
+function _legEnrichKey(leg) {
+  const fn = leg.flightNumber || ''
+  const date = leg.dateDs || (leg.rosterDate || leg.dateIso || '').replace(/-/g, '')
+  return [date, fn, leg.from, leg.to, leg.activityId || ''].join('|')
+}
+
+export function getCachedAddFlightData(uid, enrichKey) {
+  if (!uid || !enrichKey) return null
+  const entry = _enrichLoad(uid).items?.[enrichKey]
+  if (!entry || Date.now() - entry.t > _ENRICH_TTL) return null
+  return entry
 }
 
 /** 靜默暖機：App 開啟 / 回前台時呼叫，確保快取是新鮮的 */
@@ -286,6 +319,127 @@ export async function fetchCrewForActivity(uid, activityId) {
 
 const _crewInflight = new Map()
 
+async function _fetchGateInfoForEnrichment(fn, date) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 18000)
+  try {
+    const qs = new URLSearchParams({ fno: fn, date, _: String(Date.now()) })
+    const resp = await fetch(`${WORKER_URL}/api/gate?${qs}`, {
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+    return data
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function _isRosterLegDeparted(leg, today, nowHhmm) {
+  if (leg.dateDs < today) return true
+  if (leg.dateDs > today) return false
+  const std = (leg.stdLocal || '').replace(':', '')
+  return !std || std <= nowHhmm
+}
+
+function _recentUnloggedDepartedLegs(pairings) {
+  const today  = todayStr()
+  const cutoff = _daysAgo(7)
+  const nowHhmm = new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16).replace(':', '')
+  return pairings
+    .filter(p => p.date >= cutoff && p.date <= today)
+    .flatMap(p => (p.legs || []).map(lg => ({
+      flightNumber: lg.flightNumber,
+      dateDs:       p.date,
+      dateIso:      _utcDateFromRosterLocal(p.date, lg.std_local || ''),
+      rosterDate:   _dsToIso(p.date),
+      from:         lg.dep,
+      to:           lg.dest,
+      stdLocal:     lg.std_local || '',
+      blockTime:    lg.blockTime || 0,
+      activityId:   lg.activityId || p.activityId || null,
+      logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
+    })))
+    .filter(leg => !leg.logged && _isRosterLegDeparted(leg, today, nowHhmm))
+    .sort((a, b) => {
+      const d = b.dateDs.localeCompare(a.dateDs)
+      if (d) return d
+      return (b.stdLocal || '').localeCompare(a.stdLocal || '')
+    })
+}
+
+let _addFlightWarmupPromise = null
+export async function warmAddFlightData(uid) {
+  if (_addFlightWarmupPromise) return _addFlightWarmupPromise
+  _addFlightWarmupPromise = (async () => {
+    const creds = await getPegasysCreds(uid).catch(() => null)
+    if (!creds?.employeeId || !creds?.password) return
+
+    let pairings = _rcGet(uid)
+    if (!pairings) {
+      try {
+        const r = await fetchRoster(creds.employeeId, creds.password)
+        pairings = r.pairings
+        if (pairings?.length) _rcSet(uid, pairings)
+      } catch {
+        pairings = _rcGetStale(uid)
+      }
+    }
+    if (!Array.isArray(pairings) || !pairings.length) return
+
+    await loadLoggedFlights(uid, pairings)
+    const cache = _enrichLoad(uid)
+    const now = Date.now()
+    const legs = _recentUnloggedDepartedLegs(pairings).slice(0, _ENRICH_MAX_LEGS)
+
+    for (const leg of legs) {
+      const key = _legEnrichKey(leg)
+      const existing = cache.items[key]
+      if (existing && existing.status === 'ready' && now - existing.t < _ENRICH_TTL) continue
+      if (existing && existing.status === 'loading' && now - existing.t < _ENRICH_PENDING_TTL) continue
+
+      cache.items[key] = { status: 'loading', t: Date.now(), data: { leg } }
+      _enrichSave(uid, cache)
+
+      let gate = null
+      for (const d of [leg.dateIso, leg.rosterDate]) {
+        if (!d) continue
+        try {
+          const g = await _fetchGateInfoForEnrichment(leg.flightNumber, d)
+          if (g?.aircraft) { gate = g; break }
+        } catch {}
+      }
+
+      let cockpit = null
+      if (leg.activityId) {
+        try {
+          const byRoute = await fetchCrewForActivity(uid, leg.activityId)
+          cockpit = byRoute?.[`${leg.from}>${leg.to}`] || []
+        } catch {}
+      }
+
+      const hasData = Boolean(gate?.aircraft) || Boolean(cockpit?.length)
+      cache.items[key] = {
+        status: hasData ? 'ready' : 'empty',
+        t: Date.now(),
+        data: {
+          leg,
+          gate: gate ? {
+            aircraft: gate.aircraft || '',
+            acType: gate.acType || '',
+            aircraftHex: gate.aircraftHex || '',
+          } : null,
+          cockpit: cockpit || [],
+        },
+      }
+      _enrichSave(uid, cache)
+    }
+  })()
+  _addFlightWarmupPromise.finally(() => { _addFlightWarmupPromise = null }).catch(() => {})
+  return _addFlightWarmupPromise
+}
+
 // ── Logbook 連動：查詢過去航班是否已記錄 ─────
 // key: "YYYYMMDD_fnWithoutJX"  →  value: Firestore flightId
 let _loggedFlights = new Map()
@@ -394,33 +548,17 @@ export async function getRecentLegsForPicker(uid) {
 
   await loadLoggedFlights(uid, pairings)
 
-  const today  = todayStr()
-  const cutoff = _daysAgo(7)
-  // UTC+8 HHMM — STARLUX 航班以台灣時區為基準判斷是否已起飛
-  const nowHhmm = new Date(Date.now() + 8 * 3600000).toISOString().slice(11, 16).replace(':', '')
-
-  const legs = pairings
-    .filter(p => p.date >= cutoff && p.date <= today)  // 只看過去 7 天 + 今天（不含未來）
-    .flatMap(p => (p.legs || []).map(lg => ({
-      flightNumber: lg.flightNumber,
-      dateDs:       p.date,
-      dateIso:      _utcDateFromRosterLocal(p.date, lg.std_local || ''),
-      rosterDate:   _dsToIso(p.date),
-      from:         lg.dep,
-      to:           lg.dest,
-      stdLocal:     lg.std_local || '',
-      blockTime:    lg.blockTime || 0,
-      activityId:   lg.activityId || p.activityId || null,  // 供 Add Flight 按需抓該班 crew
-      crew:         lg.cockpit || [],   // 該段在線駕駛艙（PIC 第一）
-      logged:       _loggedFlights.has(`${p.date}_${lg.flightNumber.replace(/^JX/i, '')}`),
-    })))
-    .filter(leg => {
-      if (leg.logged) return false                       // 已記錄 → 不顯示
-      if (leg.dateDs < today) return true                // 過去日期 → 一定已起飛
-      // 今天：表訂起飛 (UTC+8) 已過才顯示
-      const std = (leg.stdLocal || '').replace(':', '')
-      return !std || std <= nowHhmm
-    })
+  const cache = _enrichLoad(uid)
+  const legs = _recentUnloggedDepartedLegs(pairings).map(leg => {
+    const enrichKey = _legEnrichKey(leg)
+    const enriched = cache.items[enrichKey]
+    const stale = enriched && Date.now() - enriched.t > _ENRICH_TTL
+    return {
+      ...leg,
+      enrichKey,
+      enrichStatus: stale ? '' : (enriched?.status || ''),
+    }
+  })
 
   // 最近未記錄航班在最上面（只有過去航班，直接由新到舊）
   return legs.sort((a, b) => b.dateDs.localeCompare(a.dateDs))

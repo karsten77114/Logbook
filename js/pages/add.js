@@ -23,6 +23,7 @@ import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
 import { getRecentLegsForPicker,
          fetchCrewForActivity,
+         getCachedAddFlightData,
          WORKER_URL }               from './roster.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
@@ -444,6 +445,39 @@ export function renderAdd(root) {
   // fn + date 一齊知道後查實際派遣機號，自動填入 Step 3 Registration/Type
   let _lastAcLookupSuccess = ''
   let _acLookupInflight = null
+  async function applyGateData(data, lookupKey = '') {
+    if (!data?.aircraft) return false
+
+    const reg  = data.aircraft.toUpperCase()
+    // 已知機號優先用本地機隊資料的簡寫型號（如 A321-252NX），
+    // Worker/AeroDataBox 回傳的 acType 是完整名稱（如 "Airbus A321 NEO"），只在機號未知時當備援
+    const type = getTypeByReg(reg) || data.acType || form.aircraftType
+
+    // 若該機號不在現有機隊/自訂清單，自動加入自訂機隊
+    const known = ALL_REGISTRATIONS.includes(reg) || getCustomAircraft().some(a => a.reg === reg)
+    if (!known) await addCustomAircraftEntry(reg, type)
+
+    form.registration = reg
+    form.aircraftType = type
+    if (lookupKey) _lastAcLookupSuccess = lookupKey
+
+    // 同步 Step 3 UI（無論目前在哪一步都先更新好，使用者翻到時就看到）
+    const regSel = root.querySelector('#f-reg')
+    if (regSel) {
+      if (!regSel.querySelector(`option[value="${reg}"]`)) {
+        const opt = document.createElement('option')
+        opt.value = reg
+        opt.textContent = `${reg} — ${type}`
+        regSel.appendChild(opt)
+      }
+      regSel.value = reg
+    }
+    const typeEl = root.querySelector('#f-type-display')
+    if (typeEl) typeEl.textContent = type || '—'
+    setAircraftStatus(root, 'done', reg)
+    return true
+  }
+
   async function tryAutoFillAircraft({ force = false, quiet = true } = {}) {
     const fn   = _normalizeFlightNumber(root.querySelector('#f-fn')?.value || form.flightNumber)
     const date = root.querySelector('#f-date')?.value || form.date
@@ -473,37 +507,12 @@ export function renderAdd(root) {
         return null
       }
 
-      const reg  = data.aircraft.toUpperCase()
-      // 已知機號優先用本地機隊資料的簡寫型號（如 A321-252NX），
-      // Worker/AeroDataBox 回傳的 acType 是完整名稱（如 "Airbus A321 NEO"），只在機號未知時當備援
-      const type = getTypeByReg(reg) || data.acType || form.aircraftType
-
-      // 若該機號不在現有機隊/自訂清單，自動加入自訂機隊
-      const known = ALL_REGISTRATIONS.includes(reg) || getCustomAircraft().some(a => a.reg === reg)
-      if (!known) await addCustomAircraftEntry(reg, type)
-
-      form.registration = reg
-      form.aircraftType = type
-      _lastAcLookupSuccess = key
-
-      // 同步 Step 3 UI（無論目前在哪一步都先更新好，使用者翻到時就看到）
-      const regSel = root.querySelector('#f-reg')
-      if (regSel) {
-        if (!regSel.querySelector(`option[value="${reg}"]`)) {
-          const opt = document.createElement('option')
-          opt.value = reg
-          opt.textContent = `${reg} — ${type}`
-          regSel.appendChild(opt)
-        }
-        regSel.value = reg
-      }
-      const typeEl = root.querySelector('#f-type-display')
-      if (typeEl) typeEl.textContent = type || '—'
-      setAircraftStatus(root, 'done', reg)
+      await applyGateData(data, key)
 
       // 背景查落地跑道（過去航班才有 ADS-B track）
       const _from = form.from || root.querySelector('#f-from')?.value || ''
       const _to   = form.to   || root.querySelector('#f-to')?.value   || ''
+      const reg = data.aircraft.toUpperCase()
       if (date <= todayUTC() && _from && _to) {
         fetchRunwayForFlight({ fn, date, rosterDate: form.rosterDate, reg, from: _from, to: _to })
           .then(runway => {
@@ -698,8 +707,23 @@ export function renderAdd(root) {
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
   _loadRosterPicker(root, form, prefill, async (leg) => {
-    tryAutoFillAircraft({ quiet: false })
+    const cached = getCachedAddFlightData(state.user.uid, leg.enrichKey)
+    const cachedGate = cached?.status === 'ready' ? cached.data?.gate : null
+    const cachedCockpit = cached?.status === 'ready' ? cached.data?.cockpit : null
+
+    if (cachedGate?.aircraft) {
+      await applyGateData(cachedGate)
+    } else {
+      tryAutoFillAircraft({ quiet: false })
+    }
+
     // 按需抓「該班」crew → 自動帶入駕駛艙（PIC 第一）；過程顯示狀態
+    if (cachedCockpit?.length) {
+      setCrewStatus(root, 'loading')
+      const n = await _autofillCockpitFlow(cachedCockpit, crewSlots, root, renderCrewSlots)
+      setCrewStatus(root, 'done', n)
+      return
+    }
     if (!leg.activityId) { setCrewStatus(root, 'manual'); return }
     setCrewStatus(root, 'loading')
     showToast('讀取組員中…')
@@ -741,20 +765,34 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
 
   if (!legs?.length) { section.remove(); return }
 
-  listEl.innerHTML = legs.map(lg => `
+  const legByKey = new Map()
+  listEl.innerHTML = legs.map((lg, i) => {
+    const key = lg.enrichKey || String(i)
+    legByKey.set(key, lg)
+    const ready = lg.enrichStatus === 'ready'
+    const loading = lg.enrichStatus === 'loading'
+    const enrichBadge = ready
+      ? '<span style="font-size:9px;font-weight:800;color:var(--green,#1a7838);margin-left:6px">READY</span>'
+      : loading
+        ? '<span style="font-size:9px;font-weight:800;color:var(--text-faint);margin-left:6px">LOADING</span>'
+        : ''
+    return `
     <div class="rp-row${lg.logged ? ' rp-logged' : ''}"
+         data-key="${key}"
          data-fn="${lg.flightNumber}" data-date="${lg.dateIso}"
          data-roster-date="${lg.rosterDate || lg.dateIso}"
          data-std="${lg.stdLocal || ''}"
          data-from="${lg.from}" data-to="${lg.to}" data-act="${lg.activityId || ''}">
-      <span class="rp-fn">${lg.flightNumber}</span>
+      <span class="rp-fn">${lg.flightNumber}${enrichBadge}</span>
       <span class="rp-route">${lg.from}&nbsp;→&nbsp;${lg.to}</span>
       <span class="rp-meta">${_rpFmtDate(lg.dateIso)}${lg.stdLocal ? ' · ' + lg.stdLocal + 'L' : ''}</span>
       ${lg.logged ? '<span class="rp-check">✓</span>' : ''}
-    </div>`).join('')
+    </div>`
+  }).join('')
 
   listEl.querySelectorAll('.rp-row').forEach(row => {
     row.addEventListener('click', () => {
+      const leg = legByKey.get(row.dataset.key) || {}
       const fn   = row.dataset.fn
       const date = row.dataset.date
       const rosterDate = row.dataset.rosterDate || date
@@ -777,7 +815,7 @@ async function _loadRosterPicker(root, form, prefill, onPick) {
       listEl.querySelectorAll('.rp-row').forEach(r => r.classList.remove('rp-selected'))
       row.classList.add('rp-selected')
 
-      onPick({ fn, date, rosterDate, from, to, activityId: row.dataset.act || null })
+      onPick({ fn, date, rosterDate, from, to, activityId: row.dataset.act || null, enrichKey: leg.enrichKey || '' })
     })
   })
 }
