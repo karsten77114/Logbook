@@ -25,20 +25,33 @@ import { renderCrewDetail }      from './pages/crew-detail.js'
 import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
 const root = document.getElementById('app')
+let _swReloading = false
+
+function reloadForAppUpdate() {
+  if (_swReloading) return
+  _swReloading = true
+  setTimeout(() => window.location.reload(), 300)
+}
 
 // ── Init ──────────────────────────────────────
 
 async function init() {
   // Register service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {})
+    navigator.serviceWorker.addEventListener('controllerchange', reloadForAppUpdate)
     // 新版 SW 接管後收到通知 → 強制重載以載入最新程式碼
     navigator.serviceWorker.addEventListener('message', event => {
       if (event.data?.type === 'SW_UPDATED') {
-        console.log('[App] SW updated to', event.data.version, '— reloading…')
-        setTimeout(() => window.location.reload(), 1500)
+        console.log('[App] SW updated to', event.data.version, '- reloading...')
+        reloadForAppUpdate()
       }
     })
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => {
+        reg.update().catch(() => {})
+        if (reg.waiting) reloadForAppUpdate()
+      })
+      .catch(() => {})
   }
 
   // Init Firebase

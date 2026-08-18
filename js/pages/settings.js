@@ -107,6 +107,10 @@ function renderContent(root) {
       <div id="row-version-note" class="settings-row" style="display:none;color:var(--accent);font-size:12px">
         <span class="settings-row-label" style="font-weight:600">⟳ 有新版待套用 — 完全關閉再重開 App</span>
       </div>
+      <div class="settings-row" id="row-reload-latest">
+        <span class="settings-row-label">Reload Latest App</span>
+        <span class="settings-row-chevron">›</span>
+      </div>
     </div>
 
     <div style="height:20px"></div>
@@ -185,6 +189,22 @@ function attachSettingsEvents(root) {
   // Import tool
   root.querySelector('#row-import-tool')?.addEventListener('click', () => {
     window.open('tools/import.html', '_blank')
+  })
+
+  // Force app shell refresh
+  root.querySelector('#row-reload-latest')?.addEventListener('click', async () => {
+    try {
+      showToast('Refreshing app…')
+      if ('caches' in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.filter(k => /^logbook-v\d+/.test(k)).map(k => caches.delete(k)))
+      }
+      const reg = await navigator.serviceWorker?.getRegistration()
+      await reg?.update?.()
+    } catch (_) {
+    } finally {
+      window.location.reload()
+    }
   })
 
   // Logout

@@ -1,5 +1,5 @@
 // Service Worker — Pilot Logbook
-const CACHE = 'logbook-v105'
+const CACHE = 'logbook-v106'
 const PRECACHE = [
   './',
   './index.html',
@@ -86,8 +86,29 @@ self.addEventListener('fetch', e => {
     return
   }
 
-  // Stale-while-revalidate：先回傳快取（快速），同時背景更新
-  // 下次開啟即為新版，並透過 SW_UPDATED 訊息強制重載
+  const isAppCode = e.request.mode === 'navigate' ||
+                    e.request.destination === 'document' ||
+                    e.request.destination === 'script' ||
+                    e.request.destination === 'style' ||
+                    url.pathname.endsWith('.html') ||
+                    url.pathname.endsWith('.js') ||
+                    url.pathname.endsWith('.css')
+
+  // App shell/code must be network-first. Stale-first can keep iOS PWA on an
+  // old JS bundle even after a new service worker has activated.
+  if (isAppCode) {
+    e.respondWith(
+      caches.open(CACHE).then(cache =>
+        fetch(e.request).then(res => {
+          if (res.ok && e.request.method === 'GET') cache.put(e.request, res.clone())
+          return res
+        }).catch(() => cache.match(e.request))
+      )
+    )
+    return
+  }
+
+  // Other same-origin assets keep stale-while-revalidate for fast offline loads.
   e.respondWith(
     caches.open(CACHE).then(cache =>
       cache.match(e.request).then(cached => {
