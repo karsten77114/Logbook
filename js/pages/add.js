@@ -32,6 +32,11 @@ const TOTAL       = 5
 // 判斷 roster crew 成員是否「在線駕駛艙」(operating cockpit)：
 //   新版 PegaSys 來源(leg.cockpit) 已預先篩選；bookmarklet 來源為完整名單需自行過濾
 const _COCKPIT_RANKS = new Set(['CAP', 'FO', 'TFO', 'SO', 'SFO', 'PFO', 'TCAP', 'CP', 'FI'])
+function _normalizeFlightNumber(fn) {
+  const v = (fn || '').trim().toUpperCase()
+  if (/^\d{2,4}$/.test(v)) return `JX${v}`
+  return v
+}
 function _isCockpitCrew(c) {
   if (c.workCode && c.workCode !== 'OPR') return false        // deadhead/OET 排除
   if (typeof c.isCockpit === 'boolean') return c.isCockpit
@@ -72,6 +77,22 @@ function setCrewStatus(root, st, detail) {
     'no-creds': ['未設定 PegaSys 帳密，無法自動帶入',         'var(--accent,#a06818)'],
     manual:     ['手動輸入航班，未自動帶組員',               'var(--text-faint,#aaa)'],
     idle:       ['', ''],
+  }
+  const [txt, color] = map[st] || map.idle
+  el.textContent = txt
+  el.style.color = color
+  el.style.display = txt ? '' : 'none'
+}
+
+function setAircraftStatus(root, st, detail) {
+  const el = root.querySelector('#aircraft-status')
+  if (!el) return
+  const map = {
+    loading: ['⏳ 查詢派遣機號中…',                   'var(--text-dim,#888)'],
+    done:    [`✓ 已帶入 ${detail || '派遣機號'}`,   'var(--green,#1a7838)'],
+    empty:   ['目前查無派遣機號，可先手動輸入',       'var(--accent,#a06818)'],
+    error:   ['✕ 機號查詢暫時失敗，儲存前會再試一次', '#c0392b'],
+    idle:    ['', ''],
   }
   const [txt, color] = map[st] || map.idle
   el.textContent = txt
@@ -261,6 +282,44 @@ function _utcDateFromRosterUtcTime(rosterDate, utcHm) {
   return (h * 60 + m) >= 16 * 60 ? _addDaysIso(iso, -1) : iso
 }
 
+function _sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function _dateCandidatesForGate(form, date) {
+  const out = []
+  ;[date, form.date, form.rosterDate].forEach(d => {
+    const iso = _dsToIso(d || '')
+    if (iso && !out.includes(iso)) out.push(iso)
+  })
+  return out
+}
+
+async function _fetchGateInfo(fn, date, { attempts = 2 } = {}) {
+  let lastErr = null
+  for (let i = 0; i < attempts; i++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 18000)
+    try {
+      const qs = new URLSearchParams({ fno: fn, date, _: String(Date.now()) })
+      const resp = await fetch(`${WORKER_URL}/api/gate?${qs}`, {
+        cache: 'no-store',
+        signal: ctrl.signal,
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+      return data
+    } catch (e) {
+      lastErr = e
+      if (e.status === 401 || e.status === 403 || (e.status && e.status < 500 && e.status !== 429)) break
+      if (i < attempts - 1) await _sleep(800 * (i + 1))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  throw lastErr
+}
+
 function parseUrlParams() {
   const hash   = location.hash
   const search = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
@@ -277,7 +336,7 @@ function parseUrlParams() {
   const stdLocal = p.get('std') || ''
 
   return {
-    flightNumber:       p.get('fn')   || '',
+    flightNumber:       _normalizeFlightNumber(p.get('fn') || ''),
     date:               rosterDate ? _utcDateFromRosterLocal(rosterDate, stdLocal) : todayUTC(),
     rosterDate:         _dsToIso(rosterDate),
     from:               p.get('from') || '',
@@ -321,6 +380,7 @@ export function renderAdd(root) {
   const crewSlots   = [null, null, null, null]
   let currentStep   = 0
   let activeSlotIdx = -1
+  let _crewAutofillPromise = null
 
   root.innerHTML = buildHTML(form)
 
@@ -341,7 +401,7 @@ export function renderAdd(root) {
   // ── Next / Save ──────────────────────────────
   btnNext.addEventListener('click', async () => {
     if (btnNext.classList.contains('save')) {
-      await saveFlight(root, form, crewSlots, btnNext)
+      await saveFlight(root, form, crewSlots, btnNext, tryAutoFillAircraft, () => _crewAutofillPromise)
       return
     }
     if (!validateStep(root, form, currentStep)) return
@@ -364,6 +424,9 @@ export function renderAdd(root) {
       e.target.value = e.target.value.toUpperCase()
     })
   })
+  root.querySelector('#f-fn')?.addEventListener('blur', e => {
+    e.target.value = _normalizeFlightNumber(e.target.value)
+  })
 
   // ── Step 1 — airport auto-lookup on blur ─────
   // 若輸入的 IATA 不在內建表，背景查 Worker，補座標後重算 Night Time
@@ -379,20 +442,36 @@ export function renderAdd(root) {
 
   // ── Step 1 — 機號自動帶入（Worker /api/gate，AeroDataBox，免 LIDO）──
   // fn + date 一齊知道後查實際派遣機號，自動填入 Step 3 Registration/Type
-  let _lastAcLookup = ''
-  async function tryAutoFillAircraft() {
-    const fn   = (root.querySelector('#f-fn')?.value || form.flightNumber || '').trim().toUpperCase()
+  let _lastAcLookupSuccess = ''
+  let _acLookupInflight = null
+  async function tryAutoFillAircraft({ force = false, quiet = true } = {}) {
+    const fn   = _normalizeFlightNumber(root.querySelector('#f-fn')?.value || form.flightNumber)
     const date = root.querySelector('#f-date')?.value || form.date
     if (!fn || !date) return
-    const key = `${fn}_${date}`
-    if (key === _lastAcLookup) return   // 避免同一組重複查
-    _lastAcLookup = key
+    const dates = _dateCandidatesForGate(form, date)
+    const key = `${fn}_${dates.join('|')}`
+    if (!force && key === _lastAcLookupSuccess && form.registration) return
+    if (_acLookupInflight && !force) return _acLookupInflight
 
-    try {
-      const resp = await fetch(`${WORKER_URL}/api/gate?fno=${encodeURIComponent(fn)}&date=${date}`)
-      if (!resp.ok) return
-      const data = await resp.json()
-      if (!data.aircraft) return
+    _acLookupInflight = (async () => {
+      if (!quiet) setAircraftStatus(root, 'loading')
+      let data = null
+      for (const d of dates) {
+        try {
+          const result = await _fetchGateInfo(fn, d)
+          if (result?.aircraft) {
+            data = result
+            break
+          }
+        } catch (_) {
+          // Try the next date candidate. Gate data may be keyed by UTC date
+          // or roster local date around 0000Z boundary flights.
+        }
+      }
+      if (!data?.aircraft) {
+        if (!quiet) setAircraftStatus(root, 'empty')
+        return null
+      }
 
       const reg  = data.aircraft.toUpperCase()
       // 已知機號優先用本地機隊資料的簡寫型號（如 A321-252NX），
@@ -405,6 +484,7 @@ export function renderAdd(root) {
 
       form.registration = reg
       form.aircraftType = type
+      _lastAcLookupSuccess = key
 
       // 同步 Step 3 UI（無論目前在哪一步都先更新好，使用者翻到時就看到）
       const regSel = root.querySelector('#f-reg')
@@ -419,6 +499,7 @@ export function renderAdd(root) {
       }
       const typeEl = root.querySelector('#f-type-display')
       if (typeEl) typeEl.textContent = type || '—'
+      setAircraftStatus(root, 'done', reg)
 
       // 背景查落地跑道（過去航班才有 ADS-B track）
       const _from = form.from || root.querySelector('#f-from')?.value || ''
@@ -436,11 +517,20 @@ export function renderAdd(root) {
           })
           .catch(() => {})
       }
-    } catch (_) {}
+      return data
+    })()
+    try {
+      return await _acLookupInflight
+    } catch (_) {
+      if (!quiet) setAircraftStatus(root, 'error')
+      return null
+    } finally {
+      _acLookupInflight = null
+    }
   }
 
-  root.querySelector('#f-fn')?.addEventListener('blur', tryAutoFillAircraft)
-  root.querySelector('#f-date')?.addEventListener('change', tryAutoFillAircraft)
+  root.querySelector('#f-fn')?.addEventListener('blur', () => tryAutoFillAircraft())
+  root.querySelector('#f-date')?.addEventListener('change', () => tryAutoFillAircraft({ force: true }))
 
   // ── Step 2 — time calc ───────────────────────
   const blockVal  = root.querySelector('#c-block')
@@ -582,7 +672,7 @@ export function renderAdd(root) {
 
   // 已有 fn+date 來源（Roster 補記錄按鈕 / PegaSys 連結）但沒帶機號 → 立即查
   if (prefill.flightNumber && prefill.date && !prefill.registration) {
-    tryAutoFillAircraft()
+    tryAutoFillAircraft({ quiet: false })
   }
 
   // Pre-fill cockpit crew from roster URL params (PegaSys bookmarklet)
@@ -590,7 +680,7 @@ export function renderAdd(root) {
 
   // 來自 Roster「補記錄」深連結（帶 act=activityId）→ 按需抓該班 crew 自動帶入
   if (prefill.activityId && prefill.from && prefill.to) {
-    (async () => {
+    _crewAutofillPromise = (async () => {
       setCrewStatus(root, 'loading')
       try {
         const byRoute = await fetchCrewForActivity(state.user.uid, prefill.activityId)
@@ -600,27 +690,33 @@ export function renderAdd(root) {
         setCrewStatus(root, 'done', n)
       } catch (e) {
         setCrewStatus(root, e.code === 'no_creds' ? 'no-creds' : 'error')
+      } finally {
+        _crewAutofillPromise = null
       }
     })()
   }
 
   // 載入 Roster 選擇器（若已有 prefill 則隱藏）
   _loadRosterPicker(root, form, prefill, async (leg) => {
-    tryAutoFillAircraft()
+    tryAutoFillAircraft({ quiet: false })
     // 按需抓「該班」crew → 自動帶入駕駛艙（PIC 第一）；過程顯示狀態
     if (!leg.activityId) { setCrewStatus(root, 'manual'); return }
     setCrewStatus(root, 'loading')
     showToast('讀取組員中…')
-    try {
-      const byRoute = await fetchCrewForActivity(state.user.uid, leg.activityId)
-      const cockpit = byRoute[`${leg.from}>${leg.to}`] || []
-      if (!cockpit.length) { setCrewStatus(root, 'empty'); showToast('查無此航班組員資料'); return }
-      const n = await _autofillCockpitFlow(cockpit, crewSlots, root, renderCrewSlots)
-      setCrewStatus(root, 'done', n)
-    } catch (e) {
-      setCrewStatus(root, e.code === 'no_creds' ? 'no-creds' : 'error')
-      showToast(e.code === 'no_creds' ? '未設定 PegaSys 帳密' : '組員讀取失敗', 'error')
-    }
+    _crewAutofillPromise = (async () => {
+      try {
+        const byRoute = await fetchCrewForActivity(state.user.uid, leg.activityId)
+        const cockpit = byRoute[`${leg.from}>${leg.to}`] || []
+        if (!cockpit.length) { setCrewStatus(root, 'empty'); showToast('查無此航班組員資料'); return }
+        const n = await _autofillCockpitFlow(cockpit, crewSlots, root, renderCrewSlots)
+        setCrewStatus(root, 'done', n)
+      } catch (e) {
+        setCrewStatus(root, e.code === 'no_creds' ? 'no-creds' : 'error')
+        showToast(e.code === 'no_creds' ? '未設定 PegaSys 帳密' : '組員讀取失敗', 'error')
+      } finally {
+        _crewAutofillPromise = null
+      }
+    })()
   })
 }
 
@@ -809,9 +905,11 @@ function validateStep(root, form, step) {
 function collectStep(root, form, step) {
   if (step === 0) {
     form.date         = root.querySelector('#f-date')?.value || ''
-    form.flightNumber = (root.querySelector('#f-fn')?.value || '').toUpperCase()
+    form.flightNumber = _normalizeFlightNumber(root.querySelector('#f-fn')?.value || '')
     form.from         = (root.querySelector('#f-from')?.value || '').toUpperCase()
     form.to           = (root.querySelector('#f-to')?.value || '').toUpperCase()
+    const fnEl = root.querySelector('#f-fn')
+    if (fnEl) fnEl.value = form.flightNumber
   }
   if (step === 1) {
     form.outTime  = normalizeHm(root.querySelector('#f-out')?.value || '')
@@ -844,7 +942,7 @@ function collectStep(root, form, step) {
 
 // ── Save ──────────────────────────────────────
 
-async function saveFlight(root, form, crewSlots, btn) {
+async function saveFlight(root, form, crewSlots, btn, ensureAircraft, getCrewAutofillPromise) {
   btn.disabled = true
   btn.textContent = 'Checking…'
 
@@ -852,11 +950,23 @@ async function saveFlight(root, form, crewSlots, btn) {
   collectStep(root, form, 2)
   collectStep(root, form, 3)
 
-  // Build crew arrays from slots
-  form.crew      = crewSlots.filter(Boolean).map(c => c.id)
-  form.crewNames = crewSlots.filter(Boolean).map(c => `${c.firstName} ${c.lastName}`)
-
   try {
+    const crewAutofill = getCrewAutofillPromise?.()
+    if (crewAutofill) {
+      btn.textContent = 'Fetching crew…'
+      await crewAutofill.catch(() => {})
+    }
+
+    if (!form.registration && form.flightNumber && form.date && ensureAircraft) {
+      btn.textContent = 'Fetching aircraft…'
+      await ensureAircraft({ force: true, quiet: false })
+      collectStep(root, form, 2)
+    }
+
+    // Build crew arrays from slots after any pending roster autofill finishes.
+    form.crew      = crewSlots.filter(Boolean).map(c => c.id)
+    form.crewNames = crewSlots.filter(Boolean).map(c => `${c.firstName} ${c.lastName}`)
+
     // ── Duplicate flight detection ─────────────
     if (form.date) {
       const sameDay = await getFlightsByDate(state.user.uid, form.date)
@@ -1089,6 +1199,8 @@ function step3Html(form) {
         <div class="row-lbl">Type</div>
         <span id="f-type-display" style="font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--text)">${form.aircraftType || '—'}</span>
       </div>
+
+      <div id="aircraft-status" style="display:none;font-size:12.5px;font-weight:600;margin:0 0 12px;padding:9px 12px;border-radius:8px;background:var(--surface-2,rgba(0,0,0,.04))"></div>
 
       <div class="input-row">
         <span class="row-icon">🛬</span>

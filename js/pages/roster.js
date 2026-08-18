@@ -16,7 +16,8 @@ const KB_URL      = 'https://karsten77114.github.io/Kneeboard/'
 const MONTHS      = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
 const WDAYS       = ['日','一','二','三','四','五','六']
 const STYLE_ID    = 'roster-cal-v3'
-const ROSTER_TIMEOUT_MS = 45000   // 拉長以容忍 Render 免費方案冷啟動（~30-50s）
+const ROSTER_TIMEOUT_MS = 70000   // Render 免費方案冷啟動偶爾超過 45s
+const ROSTER_RETRY_MS   = 1200
 
 // ── Roster 快取（localStorage）────────────────
 const _RC_KEY = 'lb_roster_v1'
@@ -51,9 +52,29 @@ export async function warmRosterCache(uid) {
   const creds = await getPegasysCreds(uid).catch(() => null)
   if (!creds?.employeeId || !creds?.password) return
   try {
+    await warmRosterService().catch(() => {})
     const r = await fetchRoster(creds.employeeId, creds.password)
     if (r.pairings?.length) _rcSet(uid, r.pairings)
   } catch {}                         // 靜默失敗，不影響主流程
+}
+
+let _rosterWarmupPromise = null
+export function warmRosterService() {
+  if (_rosterWarmupPromise) return _rosterWarmupPromise
+  _rosterWarmupPromise = (async () => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
+    try {
+      await fetch(`${ROSTER_SERVICE_URL}/health`, {
+        cache: 'no-store',
+        signal: ctrl.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+  })()
+  _rosterWarmupPromise.finally(() => { _rosterWarmupPromise = null }).catch(() => {})
+  return _rosterWarmupPromise
 }
 
 // ── CSS 注入（版本號防重複）─────────────────────
@@ -193,24 +214,45 @@ function _utcDateFromRosterLocal(rosterDs, stdLocal) {
 // getRecentLegsForPicker 皆同一使用者、同參數，過期視窗內天然共用同一請求，
 // 避免對 PegaSys（有反濫用封鎖前科）發併發抓取。
 let _rosterInflight = null
-function fetchRoster(employeeId, password) {
-  if (_rosterInflight) return _rosterInflight
-  _rosterInflight = (async () => {
+function _sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+function _shouldRetryRosterFetch(err) {
+  if (!err) return false
+  if (err.status === 401 || err.status === 403) return false
+  return err.name === 'AbortError' || !err.status || err.status === 429 || err.status >= 500
+}
+async function _fetchRosterJson(path, body, { attempts = 2 } = {}) {
+  let lastErr
+  await warmRosterService().catch(() => {})
+  for (let i = 0; i < attempts; i++) {
     const ctrl = new AbortController()
     const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
     try {
-      const resp = await fetch(`${ROSTER_SERVICE_URL}/roster`, {
+      const resp = await fetch(`${ROSTER_SERVICE_URL}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId, password }),
+        body: JSON.stringify(body),
+        cache: 'no-store',
         signal: ctrl.signal,
       })
       const data = await resp.json()
       if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
       return data
+    } catch (e) {
+      lastErr = e
+      if (i >= attempts - 1 || !_shouldRetryRosterFetch(e)) break
+      await _sleep(ROSTER_RETRY_MS * (i + 1))
     } finally {
       clearTimeout(timer)
     }
+  }
+  throw lastErr
+}
+function fetchRoster(employeeId, password) {
+  if (_rosterInflight) return _rosterInflight
+  _rosterInflight = (async () => {
+    return _fetchRosterJson('/roster', { employeeId, password })
   })()
   // .finally 的衍生 promise 需自行吞掉 rejection（原 promise 由呼叫端處理），
   // 否則 fetch 失敗時會多報一次 unhandled rejection
@@ -223,26 +265,26 @@ function fetchRoster(employeeId, password) {
 export async function fetchCrewForActivity(uid, activityId) {
   const creds = await getPegasysCreds(uid)
   if (!creds?.employeeId || !creds?.password) { const e = new Error('no_creds'); e.code = 'no_creds'; throw e }
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), ROSTER_TIMEOUT_MS)
-  try {
-    const resp = await fetch(`${ROSTER_SERVICE_URL}/crew`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ employeeId: creds.employeeId, password: creds.password, activityId }),
-      signal: ctrl.signal,
-    })
-    const data = await resp.json()
-    if (!resp.ok) throw Object.assign(new Error(data.error || `HTTP ${resp.status}`), { status: resp.status })
+  const key = `${creds.employeeId}:${activityId}`
+  if (_crewInflight.has(key)) return _crewInflight.get(key)
+  const p = (async () => {
+    const data = await _fetchRosterJson('/crew', {
+      employeeId: creds.employeeId,
+      password: creds.password,
+      activityId,
+    }, { attempts: 3 })
     // 排除登入者本人（自己的 logbook，crew 槽是給其他駕駛艙成員，不必把自己帶入/跳新增）
     const byRoute = data.cockpitByRoute || {}
     const me = String(creds.employeeId)
     for (const k of Object.keys(byRoute)) byRoute[k] = (byRoute[k] || []).filter(c => String(c.staffId) !== me)
     return byRoute
-  } finally {
-    clearTimeout(timer)
-  }
+  })()
+  _crewInflight.set(key, p)
+  p.finally(() => { _crewInflight.delete(key) }).catch(() => {})
+  return p
 }
+
+const _crewInflight = new Map()
 
 // ── Logbook 連動：查詢過去航班是否已記錄 ─────
 // key: "YYYYMMDD_fnWithoutJX"  →  value: Firestore flightId

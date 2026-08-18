@@ -18,7 +18,8 @@ import { renderAdd }             from './pages/add.js'
 import { renderDetail }          from './pages/detail.js'
 import { renderSettings }        from './pages/settings.js'
 import { renderRoster,
-         warmRosterCache }        from './pages/roster.js'
+         warmRosterCache,
+         warmRosterService }      from './pages/roster.js'
 import { renderCrewDetail }      from './pages/crew-detail.js'
 import { renderAirplaneDetail }  from './pages/airplane-detail.js'
 
@@ -79,7 +80,7 @@ async function loadUserData(uid) {
   setCustomAircraft(customAircraft)
 
   // App 一開就 fire-and-forget 喚醒 Render（/health 不碰 PegaSys），等真正抓班表時已暖機
-  fetch('https://pegasys-fetch.onrender.com/health').catch(() => {})
+  warmRosterService().catch(() => {})
   // 靜默暖機 Roster 快取（不等待，不阻塞登入流程）
   warmRosterCache(uid).catch(() => {})
 }
