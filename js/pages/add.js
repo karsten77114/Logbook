@@ -24,6 +24,7 @@ import { showCountryPicker,
 import { getRecentLegsForPicker,
          fetchCrewForActivity,
          getCachedAddFlightData,
+         invalidateRosterLoggedFlights,
          WORKER_URL }               from './roster.js'
 
 const STEP_LABELS = ['Route', 'Times', 'Aircraft', 'Piloting', 'Crew']
@@ -1028,6 +1029,7 @@ async function saveFlight(root, form, crewSlots, btn, ensureAircraft, getCrewAut
 
     const flightId = await addFlight(state.user.uid, form)
     invalidateStats()
+    invalidateRosterLoggedFlights()
     // 背景抓取 ADS-B track，不等結果、不阻擋 UI
     backgroundFetchAndSaveTrack(state.user.uid, flightId, form).catch(() => {})
     showToast('✓ Saved', 'success')

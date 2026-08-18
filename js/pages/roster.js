@@ -599,6 +599,12 @@ let _loggedFlightsSig = ''    // 過去出勤日 fingerprint
 const LOGGED_TTL_MS   = 5 * 60 * 1000   // 5 分鐘 TTL
 const PAST_DAYS_LIMIT = 90              // 只追蹤最近 90 天
 
+export function invalidateRosterLoggedFlights() {
+  _loggedFlights = new Map()
+  _loggedFlightsTs = 0
+  _loggedFlightsSig = ''
+}
+
 // ── 月曆渲染 ──────────────────────────────────
 function renderCalendar(scrollEl) {
   _injectStyles()
