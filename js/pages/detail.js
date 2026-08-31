@@ -2,7 +2,7 @@
 // Flight Detail Page
 // ══════════════════════════════════════════════
 import { getFlight, deleteFlight, updateFlight } from '../db.js'
-import { state }                                  from '../state.js'
+import { state, isCrewActive }                    from '../state.js'
 import { navigate, showToast }                    from '../app.js'
 import { invalidateStats }                        from './list.js'
 import { fmtDate, fmtDuration,
@@ -12,6 +12,8 @@ import { detectRunway }                           from '../utils/runway.js'
 import { FLEET, APPROACH_TYPES,
          ALL_REGISTRATIONS, getTypeByReg }        from '../data/fleet.js'
 import { isAircraftActive }                       from '../state.js'
+
+const EDIT_CREW_ROLES = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 
 export async function renderDetail(root, params) {
   const flightId = params[0]
@@ -778,6 +780,146 @@ function _minHm(min) {
   return `${h}:${String(m).padStart(2, '0')}`
 }
 
+function _escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function _crewName(person) {
+  return `${person?.firstName || ''} ${person?.lastName || ''}`.trim() ||
+         person?.displayName ||
+         person?.name ||
+         ''
+}
+
+function _crewInitials(person) {
+  const name = _crewName(person)
+  if (!name) return ''
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase()
+}
+
+function _crewAvatar(person, fallback) {
+  return _escapeHtml(_crewInitials(person) || fallback)
+}
+
+function _initialCrewSlots(f) {
+  const byId = new Map((state.crew || []).map(c => [c.id, c]))
+  const ids = Array.isArray(f.crew) ? f.crew : []
+  const names = Array.isArray(f.crewNames) ? f.crewNames : []
+  const size = Math.max(EDIT_CREW_ROLES.length, ids.length, names.length)
+  return Array.from({ length: size }, (_, i) => {
+    const id = ids[i]
+    if (id && byId.has(id)) return byId.get(id)
+    if (id || names[i]) {
+      return {
+        id: id || '',
+        displayName: names[i] || id,
+        legacyOnly: !byId.has(id),
+      }
+    }
+    return null
+  })
+}
+
+function _editCrewSlotsHtml(crewSlots) {
+  return crewSlots.map((person, i) => {
+    const role = EDIT_CREW_ROLES[i] || `Crew ${i + 1}`
+    const name = person ? _crewName(person) || 'Unknown crew' : 'Tap to assign'
+    const meta = person?.position || person?.employeeId || (person?.legacyOnly ? 'Saved name only' : '')
+    return `
+      <div class="crew-slot edit-crew-slot${person ? ' filled' : ''}" data-slot="${i}">
+        <div class="crew-avatar">${person ? _crewAvatar(person, String(i + 1)) : String(i + 1)}</div>
+        <div class="crew-info">
+          <div class="crew-role">${_escapeHtml(role)}</div>
+          <div class="crew-name-val">${_escapeHtml(name)}</div>
+          ${meta ? `<div class="edit-crew-meta">${_escapeHtml(meta)}</div>` : ''}
+        </div>
+        <span class="crew-chevron">›</span>
+      </div>`
+  }).join('')
+}
+
+function _renderEditCrewSlots(overlay, crewSlots) {
+  const wrap = overlay.querySelector('#ef-crew-slots')
+  if (wrap) wrap.innerHTML = _editCrewSlotsHtml(crewSlots)
+}
+
+function _openEditCrewPicker(overlay, crewSlots, slotIdx) {
+  const sheet = document.createElement('div')
+  sheet.className = 'sheet-overlay open'
+  sheet.style.zIndex = '10001'
+
+  const renderList = (query = '') => {
+    const q = query.trim().toLowerCase()
+    const crew = (state.crew || []).filter(c => isCrewActive(c))
+    const list = q
+      ? crew.filter(c => `${c.firstName || ''} ${c.lastName || ''} ${c.employeeId || ''}`.toLowerCase().includes(q))
+      : crew
+    const currentId = crewSlots[slotIdx]?.id || ''
+    const clearRow = crewSlots[slotIdx] ? `
+      <div class="sheet-crew-item edit-crew-clear" data-clear="1">
+        <div class="sci-avatar">-</div>
+        <div class="sci-name">Clear this slot</div>
+      </div>` : ''
+    const rows = list.length ? list.map(c => `
+      <div class="sheet-crew-item" data-id="${_escapeHtml(c.id)}">
+        <div class="sci-avatar">${_crewAvatar(c, '')}</div>
+        <div class="sci-name">${_escapeHtml(_crewName(c))}
+          <span style="font-size:11px;color:var(--text-dim);display:block">${_escapeHtml(c.position || c.employeeId || '')}</span>
+        </div>
+        ${c.id === currentId ? '<span class="sci-check">✓</span>' : ''}
+      </div>`).join('') : `
+      <div style="padding:24px;text-align:center;color:var(--text-faint);font-size:13px">
+        ${q ? 'No crew found' : 'No active crew'}
+      </div>`
+    sheet.querySelector('#edit-crew-list').innerHTML = clearRow + rows
+  }
+
+  sheet.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <div class="sheet-head-title">Select Crew</div>
+        <button class="sheet-close" id="edit-crew-close">✕</button>
+      </div>
+      <div class="sheet-search-wrap">
+        <input class="sheet-search-input" id="edit-crew-search"
+               type="text" placeholder="Search by name or staff ID..."
+               autocomplete="off" autocorrect="off">
+      </div>
+      <div class="sheet-list" id="edit-crew-list"></div>
+    </div>`
+  document.body.appendChild(sheet)
+  renderList()
+
+  const search = sheet.querySelector('#edit-crew-search')
+  setTimeout(() => search?.focus(), 80)
+  search?.addEventListener('input', () => renderList(search.value))
+  sheet.querySelector('#edit-crew-close')?.addEventListener('click', () => sheet.remove())
+  sheet.querySelector('#edit-crew-list')?.addEventListener('click', e => {
+    const row = e.target.closest('.sheet-crew-item')
+    if (!row) return
+    if (row.dataset.clear) {
+      crewSlots[slotIdx] = null
+    } else {
+      const person = (state.crew || []).find(c => c.id === row.dataset.id)
+      if (!person) return
+      for (let i = 0; i < crewSlots.length; i++) {
+        if (crewSlots[i]?.id === person.id) crewSlots[i] = null
+      }
+      crewSlots[slotIdx] = person
+    }
+    _renderEditCrewSlots(overlay, crewSlots)
+    sheet.remove()
+  })
+  sheet.addEventListener('click', e => { if (e.target === sheet) sheet.remove() })
+}
+
 function showEditSheet(root, f, flightId) {
   const activeRegs = ALL_REGISTRATIONS.filter(r => isAircraftActive(r))
   const regOptions = activeRegs.map(r => {
@@ -788,6 +930,7 @@ function showEditSheet(root, f, flightId) {
   const approachOptions = APPROACH_TYPES.map(a =>
     `<option value="${a}" ${a === f.approachType ? 'selected' : ''}>${a}</option>`
   ).join('')
+  const crewSlots = _initialCrewSlots(f)
 
   const yn = (key) => `
     <div class="edit-toggle-row" data-key="${key}" data-val="${f[key] ? '1' : '0'}">
@@ -802,112 +945,132 @@ function showEditSheet(root, f, flightId) {
   const overlay = document.createElement('div')
   overlay.className = 'modal-overlay'
   overlay.innerHTML = `
-    <div class="modal-sheet" style="max-height:90vh;overflow-y:auto">
+    <div class="modal-sheet edit-flight-sheet">
       <div class="modal-handle"></div>
-      <div class="modal-title">Edit Flight</div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Date (UTC)</label>
-          <input class="form-input" id="ef-date" type="date" value="${f.date || ''}">
+      <div class="edit-flight-head">
+        <div>
+          <div class="modal-title">Edit Flight</div>
+          <div class="edit-flight-route">${f.from || '???'} → ${f.to || '???'}</div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Flight No.</label>
-          <input class="form-input mono" id="ef-fn" type="text" value="${f.flightNumber || ''}"
-                 autocapitalize="characters" autocomplete="off">
+        <div class="edit-flight-chip">${f.flightNumber || '—'}</div>
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Flight</div>
+        <div class="edit-grid two">
+          <div class="form-group">
+            <label class="form-label">Date (UTC)</label>
+            <input class="form-input" id="ef-date" type="date" value="${f.date || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Flight No.</label>
+            <input class="form-input mono" id="ef-fn" type="text" value="${f.flightNumber || ''}"
+                   autocapitalize="characters" autocomplete="off">
+          </div>
+        </div>
+        <div class="edit-grid two">
+          <div class="form-group">
+            <label class="form-label">From</label>
+            <input class="form-input mono" id="ef-from" type="text" value="${f.from || ''}"
+                   maxlength="4" autocapitalize="characters">
+          </div>
+          <div class="form-group">
+            <label class="form-label">To</label>
+            <input class="form-input mono" id="ef-to" type="text" value="${f.to || ''}"
+                   maxlength="4" autocapitalize="characters">
+          </div>
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">From</label>
-          <input class="form-input mono" id="ef-from" type="text" value="${f.from || ''}"
-                 maxlength="4" autocapitalize="characters">
+      <div class="edit-section">
+        <div class="edit-section-title">Times</div>
+        <div class="edit-grid four">
+          <div class="form-group">
+            <label class="form-label">OUT</label>
+            <input class="form-input mono" id="ef-out" type="text" value="${f.outTime || ''}"
+                   placeholder="HHMM" maxlength="5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">OFF</label>
+            <input class="form-input mono" id="ef-off" type="text" value="${f.offTime || ''}"
+                   placeholder="HHMM" maxlength="5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">ON</label>
+            <input class="form-input mono" id="ef-on" type="text" value="${f.onTime || ''}"
+                   placeholder="HHMM" maxlength="5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">IN</label>
+            <input class="form-input mono" id="ef-in" type="text" value="${f.inTime || ''}"
+                   placeholder="HHMM" maxlength="5">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">To</label>
-          <input class="form-input mono" id="ef-to" type="text" value="${f.to || ''}"
-                 maxlength="4" autocapitalize="characters">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">OUT</label>
-          <input class="form-input mono" id="ef-out" type="text" value="${f.outTime || ''}"
-                 placeholder="HHMM" maxlength="5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">OFF</label>
-          <input class="form-input mono" id="ef-off" type="text" value="${f.offTime || ''}"
-                 placeholder="HHMM" maxlength="5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">ON</label>
-          <input class="form-input mono" id="ef-on" type="text" value="${f.onTime || ''}"
-                 placeholder="HHMM" maxlength="5">
-        </div>
-        <div class="form-group">
-          <label class="form-label">IN</label>
-          <input class="form-input mono" id="ef-in" type="text" value="${f.inTime || ''}"
-                 placeholder="HHMM" maxlength="5">
-        </div>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
+        <div class="form-group edit-night-field">
           <label class="form-label">Night Time</label>
           <input class="form-input mono" id="ef-night" type="text"
                  value="${_minHm(f.nightTime)}" placeholder="H:MM">
         </div>
-        <div class="form-group" style="flex:0;min-width:0"></div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Registration</label>
-        <select class="form-select" id="ef-reg">
-          <option value="">—</option>
-          ${regOptions}
-          ${f.registration && !activeRegs.includes(f.registration)
-            ? `<option value="${f.registration}" selected>${f.registration}</option>`
-            : ''}
-        </select>
-      </div>
-
-      <div class="form-row">
+      <div class="edit-section">
+        <div class="edit-section-title">Aircraft</div>
         <div class="form-group">
-          <label class="form-label">Approach</label>
-          <select class="form-select" id="ef-approach">
+          <label class="form-label">Registration</label>
+          <select class="form-select" id="ef-reg">
             <option value="">—</option>
-            ${approachOptions}
+            ${regOptions}
+            ${f.registration && !activeRegs.includes(f.registration)
+              ? `<option value="${f.registration}" selected>${f.registration}</option>`
+              : ''}
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">Runway</label>
-          <input class="form-input mono" id="ef-runway" type="text"
-                 value="${f.runway || ''}" maxlength="4" autocapitalize="characters">
+        <div class="edit-grid two">
+          <div class="form-group">
+            <label class="form-label">Approach</label>
+            <select class="form-select" id="ef-approach">
+              <option value="">—</option>
+              ${approachOptions}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Runway</label>
+            <input class="form-input mono" id="ef-runway" type="text"
+                   value="${f.runway || ''}" maxlength="4" autocapitalize="characters">
+          </div>
         </div>
       </div>
 
-      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);padding:12px 0 8px">Piloting</div>
-      ${['pfTakeoff','pfLanding','pic','autoland','goAround','diverted'].map(yn).join('')}
+      <div class="edit-section">
+        <div class="edit-section-title">Piloting</div>
+        ${['pfTakeoff','pfLanding','pic','autoland','goAround','diverted'].map(yn).join('')}
+      </div>
 
-      <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-dim);padding:12px 0 8px">Load</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">PAX</label>
-          <input class="form-input" id="ef-pax" type="number" inputmode="numeric"
-                 value="${f.totalPax || ''}">
+      <div class="edit-section">
+        <div class="edit-section-title">Load</div>
+        <div class="edit-grid three">
+          <div class="form-group">
+            <label class="form-label">PAX</label>
+            <input class="form-input" id="ef-pax" type="number" inputmode="numeric"
+                   value="${f.totalPax || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Payload (t)</label>
+            <input class="form-input" id="ef-payload" type="number" inputmode="decimal"
+                   step="0.1" value="${f.totalPayload || ''}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Dist (NM)</label>
+            <input class="form-input" id="ef-dist" type="number" inputmode="numeric"
+                   value="${f.flightPlanDistance || ''}">
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Payload (t)</label>
-          <input class="form-input" id="ef-payload" type="number" inputmode="decimal"
-                 step="0.1" value="${f.totalPayload || ''}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Dist (NM)</label>
-          <input class="form-input" id="ef-dist" type="number" inputmode="numeric"
-                 value="${f.flightPlanDistance || ''}">
+      </div>
+
+      <div class="edit-section">
+        <div class="edit-section-title">Crew</div>
+        <div class="crew-slots edit-crew-slots" id="ef-crew-slots">
+          ${_editCrewSlotsHtml(crewSlots)}
         </div>
       </div>
 
@@ -922,6 +1085,12 @@ function showEditSheet(root, f, flightId) {
       row.dataset.val = isOn ? '0' : '1'
       row.querySelector('.hub-toggle-switch')?.classList.toggle('on', !isOn)
     })
+  })
+
+  overlay.querySelector('#ef-crew-slots')?.addEventListener('click', e => {
+    const slot = e.target.closest('.edit-crew-slot')
+    if (!slot) return
+    _openEditCrewPicker(overlay, crewSlots, parseInt(slot.dataset.slot, 10))
   })
 
   // Auto-uppercase airports / fn
@@ -972,6 +1141,8 @@ function showEditSheet(root, f, flightId) {
       totalPax:           parseInt(overlay.querySelector('#ef-pax').value     || '0', 10),
       totalPayload:       parseFloat(overlay.querySelector('#ef-payload').value || '0'),
       flightPlanDistance: parseInt(overlay.querySelector('#ef-dist').value    || '0', 10),
+      crew:               crewSlots.filter(c => c?.id && !c.legacyOnly).map(c => c.id),
+      crewNames:          crewSlots.filter(Boolean).map(c => _crewName(c)).filter(Boolean),
     }
 
     try {

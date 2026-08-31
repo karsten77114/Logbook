@@ -1396,6 +1396,88 @@ html, body {
   text-align: center;
 }
 
+.edit-flight-sheet {
+  max-height: 92vh;
+  overflow-y: auto;
+  gap: 12px;
+  background: var(--bg);
+}
+.edit-flight-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 4px;
+}
+.edit-flight-head .modal-title {
+  text-align: left;
+  margin-bottom: 4px;
+}
+.edit-flight-route {
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.edit-flight-chip {
+  flex-shrink: 0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: rgba(160,104,24,0.10);
+  border: 1px solid rgba(160,104,24,0.22);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+.edit-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.edit-section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 700;
+}
+.edit-grid {
+  display: grid;
+  gap: 10px;
+}
+.edit-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.edit-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.edit-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.edit-night-field {
+  max-width: 160px;
+}
+.edit-crew-slots {
+  margin: 0;
+}
+.edit-crew-slot {
+  background: var(--bg);
+}
+.edit-crew-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+.edit-crew-clear .sci-avatar {
+  color: var(--red);
+}
+
+@media (max-width: 420px) {
+  .edit-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .edit-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .edit-flight-route { font-size: 21px; }
+}
+
 /* ── Empty state ─────────────────────────────── */
 .empty-state {
   display: flex; flex-direction: column;
