@@ -1,0 +1,13 @@
+{
+  "name": "logbook",
+  "private": true,
+  "type": "module",
+  "description": "Static Logbook PWA — dev tooling only, no runtime dependencies",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test scripts/runway-smoke.test.mjs"
+  }
+}
