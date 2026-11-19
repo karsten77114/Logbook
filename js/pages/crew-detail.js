@@ -6,6 +6,7 @@ import { state, setCrew, isCrewActive }        from '../state.js'
 import { navigate, showToast }                 from '../app.js'
 import { fmtDuration }                         from '../utils/time.js'
 import { showCountryPicker, getCountryName }   from '../data/countries.js'
+import { matchCrewFlights }                    from '../utils/crew.js'
 
 export async function renderCrewDetail(root, params) {
   const crewId = params[0]
@@ -29,13 +30,11 @@ export async function renderCrewDetail(root, params) {
 
   try {
     const allFlights = await getAllFlights(state.user.uid)
-    const name       = `${person.firstName} ${person.lastName}`.trim()
 
-    // Match by crew ID array or crewNames array
-    const together = allFlights.filter(f =>
-      f.crew?.includes(crewId) ||
-      f.crewNames?.some(n => n.trim() === name)
-    ).sort((a, b) => b.date.localeCompare(a.date))
+    // Crew IDs are authoritative; name-only legacy flights count only when the
+    // name is unique in the full crew list (active + inactive).
+    const { matched, ambiguous } = matchCrewFlights(person, state.crew || [], allFlights)
+    const together = matched.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
 
     const sectors  = together.length
     const blockMin = together.reduce((s, f) => s + (f.blockTime || 0), 0)
@@ -43,7 +42,7 @@ export async function renderCrewDetail(root, params) {
     together.forEach(f => { if (f.from) airports.add(f.from); if (f.to) airports.add(f.to) })
 
     const stats = { sectors, blockMin, airports: airports.size }
-    _paintDetail(root, person, stats, together)
+    _paintDetail(root, person, stats, together, ambiguous)
   } catch (e) {
     root.querySelector('#crew-detail-scroll').innerHTML = `
       <div class="empty-state">
@@ -54,7 +53,7 @@ export async function renderCrewDetail(root, params) {
   }
 }
 
-function _paintDetail(root, person, stats, flights) {
+function _paintDetail(root, person, stats, flights, ambiguous) {
   const scroll   = root.querySelector('#crew-detail-scroll')
   const active   = isCrewActive(person)
 
@@ -134,6 +133,11 @@ function _paintDetail(root, person, stats, flights) {
           ${fls.map(f => _flightRowHtml(f)).join('')}
         `).join('')
     }
+    ${ambiguous.length ? `
+      <details>
+        <summary class="cd-flights-header">UNASSIGNED LEGACY FLIGHTS (${ambiguous.length})</summary>
+        ${ambiguous.map(_flightRowHtml).join('')}
+      </details>` : ''}
     <div style="height:32px"></div>
   `
 

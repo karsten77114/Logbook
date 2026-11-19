@@ -12,6 +12,9 @@ import { detectRunway }                           from '../utils/runway.js'
 import { FLEET, APPROACH_TYPES,
          ALL_REGISTRATIONS, getTypeByReg }        from '../data/fleet.js'
 import { isAircraftActive }                       from '../state.js'
+import { initialCrewSlots, crewFieldsFromSlots,
+         crewMatchesQuery, crewMeta,
+         crewFullName }                           from '../utils/crew.js'
 
 const EDIT_CREW_ROLES = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 
@@ -788,15 +791,8 @@ function _escapeHtml(s) {
     .replace(/"/g, '&quot;')
 }
 
-function _crewName(person) {
-  return `${person?.firstName || ''} ${person?.lastName || ''}`.trim() ||
-         person?.displayName ||
-         person?.name ||
-         ''
-}
-
 function _crewInitials(person) {
-  const name = _crewName(person)
+  const name = crewFullName(person)
   if (!name) return ''
   const parts = name.split(/\s+/).filter(Boolean)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
@@ -808,29 +804,15 @@ function _crewAvatar(person, fallback) {
 }
 
 function _initialCrewSlots(f) {
-  const byId = new Map((state.crew || []).map(c => [c.id, c]))
-  const ids = Array.isArray(f.crew) ? f.crew : []
-  const names = Array.isArray(f.crewNames) ? f.crewNames : []
-  const size = Math.max(EDIT_CREW_ROLES.length, ids.length, names.length)
-  return Array.from({ length: size }, (_, i) => {
-    const id = ids[i]
-    if (id && byId.has(id)) return byId.get(id)
-    if (id || names[i]) {
-      return {
-        id: id || '',
-        displayName: names[i] || id,
-        legacyOnly: !byId.has(id),
-      }
-    }
-    return null
-  })
+  return initialCrewSlots(f, state.crew || [], EDIT_CREW_ROLES.length)
 }
 
 function _editCrewSlotsHtml(crewSlots) {
   return crewSlots.map((person, i) => {
     const role = EDIT_CREW_ROLES[i] || `Crew ${i + 1}`
-    const name = person ? _crewName(person) || 'Unknown crew' : 'Tap to assign'
-    const meta = person?.position || person?.employeeId || (person?.legacyOnly ? 'Saved name only' : '')
+    const name = person ? crewFullName(person) || 'Unknown crew' : 'Tap to assign'
+    const meta = crewMeta(person) ||
+      (person?.unresolved ? 'Saved crew ID (not in crew list)' : person?.legacyOnly ? 'Saved name only' : '')
     return `
       <div class="crew-slot edit-crew-slot${person ? ' filled' : ''}" data-slot="${i}">
         <div class="crew-avatar">${person ? _crewAvatar(person, String(i + 1)) : String(i + 1)}</div>
@@ -849,7 +831,7 @@ function _renderEditCrewSlots(overlay, crewSlots) {
   if (wrap) wrap.innerHTML = _editCrewSlotsHtml(crewSlots)
 }
 
-function _openEditCrewPicker(overlay, crewSlots, slotIdx) {
+function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
   const sheet = document.createElement('div')
   sheet.className = 'sheet-overlay open'
   sheet.style.zIndex = '10001'
@@ -857,9 +839,7 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx) {
   const renderList = (query = '') => {
     const q = query.trim().toLowerCase()
     const crew = (state.crew || []).filter(c => isCrewActive(c))
-    const list = q
-      ? crew.filter(c => `${c.firstName || ''} ${c.lastName || ''} ${c.employeeId || ''}`.toLowerCase().includes(q))
-      : crew
+    const list = q ? crew.filter(c => crewMatchesQuery(c, q)) : crew
     const currentId = crewSlots[slotIdx]?.id || ''
     const clearRow = crewSlots[slotIdx] ? `
       <div class="sheet-crew-item edit-crew-clear" data-clear="1">
@@ -869,8 +849,8 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx) {
     const rows = list.length ? list.map(c => `
       <div class="sheet-crew-item" data-id="${_escapeHtml(c.id)}">
         <div class="sci-avatar">${_crewAvatar(c, '')}</div>
-        <div class="sci-name">${_escapeHtml(_crewName(c))}
-          <span style="font-size:11px;color:var(--text-dim);display:block">${_escapeHtml(c.position || c.employeeId || '')}</span>
+        <div class="sci-name">${_escapeHtml(crewFullName(c))}
+          <span style="font-size:11px;color:var(--text-dim);display:block">${_escapeHtml(crewMeta(c))}</span>
         </div>
         ${c.id === currentId ? '<span class="sci-check">✓</span>' : ''}
       </div>`).join('') : `
@@ -909,11 +889,13 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx) {
     } else {
       const person = (state.crew || []).find(c => c.id === row.dataset.id)
       if (!person) return
+      if (crewSlots[slotIdx]?.id === person.id) { sheet.remove(); return }
       for (let i = 0; i < crewSlots.length; i++) {
         if (crewSlots[i]?.id === person.id) crewSlots[i] = null
       }
       crewSlots[slotIdx] = person
     }
+    onChange?.()
     _renderEditCrewSlots(overlay, crewSlots)
     sheet.remove()
   })
@@ -931,6 +913,7 @@ function showEditSheet(root, f, flightId) {
     `<option value="${a}" ${a === f.approachType ? 'selected' : ''}>${a}</option>`
   ).join('')
   const crewSlots = _initialCrewSlots(f)
+  let crewDirty = false   // untouched crew → stored crew / crewNames left as-is
 
   const yn = (key) => `
     <div class="edit-toggle-row" data-key="${key}" data-val="${f[key] ? '1' : '0'}">
@@ -1090,7 +1073,7 @@ function showEditSheet(root, f, flightId) {
   overlay.querySelector('#ef-crew-slots')?.addEventListener('click', e => {
     const slot = e.target.closest('.edit-crew-slot')
     if (!slot) return
-    _openEditCrewPicker(overlay, crewSlots, parseInt(slot.dataset.slot, 10))
+    _openEditCrewPicker(overlay, crewSlots, parseInt(slot.dataset.slot, 10), () => { crewDirty = true })
   })
 
   // Auto-uppercase airports / fn
@@ -1141,8 +1124,7 @@ function showEditSheet(root, f, flightId) {
       totalPax:           parseInt(overlay.querySelector('#ef-pax').value     || '0', 10),
       totalPayload:       parseFloat(overlay.querySelector('#ef-payload').value || '0'),
       flightPlanDistance: parseInt(overlay.querySelector('#ef-dist').value    || '0', 10),
-      crew:               crewSlots.filter(c => c?.id && !c.legacyOnly).map(c => c.id),
-      crewNames:          crewSlots.filter(Boolean).map(c => _crewName(c)).filter(Boolean),
+      ...(crewDirty ? crewFieldsFromSlots(crewSlots) : {}),
     }
 
     try {

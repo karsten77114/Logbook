@@ -15,6 +15,7 @@ import { navigate, showToast }                       from '../app.js'
 import { showCountryPicker, getCountryName }         from '../data/countries.js'
 import { navIcon }                                   from '../ui/nav-icons.js'
 import { AIRPORTS }                                  from '../data/airports.js'
+import { crewMatchesQuery, crewMeta }                from '../utils/crew.js'
 
 // ── Module-level state ────────────────────────
 let _section    = 'flights'  // flights | crew | airplanes | experience
@@ -214,7 +215,7 @@ function renderSection(root) {
       searchInput.placeholder = 'Flight no. or airport…'
       searchInput.value = _search.flights
     } else if (isCrewSec) {
-      searchInput.placeholder = 'Crew name…'
+      searchInput.placeholder = 'Crew name or staff ID…'
       searchInput.value = _search.crew
     } else {
       searchInput.value = ''
@@ -457,13 +458,7 @@ function _paintCrewList(root) {
 
   if (q) {
     // Crew 只搜「人」：姓名（含反過來寫）與員編
-    crew = crew.filter(c => {
-      const first = (c.firstName || '').toLowerCase()
-      const last  = (c.lastName  || '').toLowerCase()
-      return `${first} ${last}`.includes(q) ||
-             `${last} ${first}`.includes(q) ||
-             (c.employeeId || '').toLowerCase().includes(q)
-    })
+    crew = crew.filter(c => crewMatchesQuery(c, q))
   }
 
   const active   = crew.filter(c => isCrewActive(c))
@@ -517,7 +512,7 @@ function crewRowHtml(c) {
       <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}">${avatarInner}</div>
       <div class="hub-row-info">
         <div class="hub-row-name">${c.firstName || ''} ${c.lastName || ''}</div>
-        <div class="hub-row-sub">${c.position || '—'}</div>
+        <div class="hub-row-sub">${crewMeta(c) || '—'}</div>
       </div>
       <div class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}">
         ${active ? 'Active' : 'Inactive'}

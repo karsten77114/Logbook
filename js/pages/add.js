@@ -21,6 +21,9 @@ import { isAircraftActive,
          isCrewActive }            from '../state.js'
 import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
+import { crewMatchesQuery,
+         crewMeta,
+         crewLabel }               from '../utils/crew.js'
 import { getRecentLegsForPicker,
          fetchCrewForActivity,
          getCachedAddFlightData,
@@ -839,9 +842,7 @@ function renderSheetList(listEl, crewSlots, slotIdx, query) {
   const q    = (query || '').toLowerCase().trim()
   // 只顯示 Active 機師（搜尋時也只在 Active 裡找）
   const crew = (state.crew || []).filter(c => isCrewActive(c))
-  const list = q ? crew.filter(c =>
-    `${c.firstName} ${c.lastName}`.toLowerCase().includes(q)
-  ) : crew
+  const list = q ? crew.filter(c => crewMatchesQuery(c, q)) : crew
 
   if (list.length === 0) {
     listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-faint);font-size:13px">
@@ -856,7 +857,7 @@ function renderSheetList(listEl, crewSlots, slotIdx, query) {
     return `<div class="sheet-crew-item" data-id="${c.id}">
       ${crewAvatarHtml(c, 16)}
       <div class="sci-name">${c.firstName} ${c.lastName}
-        <span style="font-size:11px;color:var(--text-dim);display:block">${c.position || ''}</span>
+        <span style="font-size:11px;color:var(--text-dim);display:block">${crewMeta(c)}</span>
       </div>
       ${checked ? '<span class="sci-check">✓</span>' : ''}
     </div>`
@@ -874,7 +875,7 @@ function renderCrewSlots(root, crewSlots) {
     if (person) {
       slot.classList.add('filled')
       if (avatarEl) avatarEl.textContent = initials2(person)
-      if (nameEl)   nameEl.textContent   = `${person.firstName} ${person.lastName}`
+      if (nameEl)   nameEl.textContent   = crewLabel(person)
     } else {
       slot.classList.remove('filled')
       if (avatarEl) avatarEl.textContent = String(i + 1)
@@ -1359,7 +1360,7 @@ function crewSheetHtml() {
         </div>
         <div class="sheet-search-wrap">
           <input class="sheet-search-input" id="sheet-search"
-                 type="text" placeholder="Search by name…"
+                 type="text" placeholder="Search by name or staff ID…"
                  autocomplete="off" autocorrect="off">
         </div>
         <div class="sheet-list" id="sheet-list"></div>
