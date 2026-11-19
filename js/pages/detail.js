@@ -441,8 +441,11 @@ function _initMap(wrap) {
     wrap._trackMap = null
   }
   wrap.innerHTML = `<div id="track-map" style="height:240px;border-radius:var(--radius)"></div>`
-  const map = L.map('track-map', { zoomControl: false, attributionControl: false })
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map)
+  const map = L.map('track-map', { zoomControl: false, attributionControl: true })
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+  }).addTo(map)
   wrap._trackMap = map
   return map
 }
