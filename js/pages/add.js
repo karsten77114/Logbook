@@ -23,7 +23,18 @@ import { showCountryPicker,
          getCountryName }          from '../data/countries.js'
 import { crewMatchesQuery,
          crewMeta,
-         crewLabel }               from '../utils/crew.js'
+         crewFullName,
+         crewNickname, crewLabel,
+         normalizeCrewNickname,
+         CREW_NICKNAME_MAX }       from '../utils/crew.js'
+
+function _esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 import { getRecentLegsForPicker,
          fetchCrewForActivity,
          getCachedAddFlightData,
@@ -153,13 +164,13 @@ function _promptPrefilledCrew(rc) {
     overlay.style.zIndex = '10002'
     const pos = _rankToPosition(rc)
     const posOpts = ['FO', 'SFO', 'CA', 'Check Captain', 'Student Pilot', 'Other']
-    const esc = s => (s || '').replace(/"/g, '&quot;')
+    const esc = _esc
     overlay.innerHTML = `
       <div class="modal-sheet">
         <div class="modal-handle"></div>
         <div class="modal-title">新增組員（已帶入班表資料）</div>
         <div style="font-size:12px;color:var(--text-dim);margin:-4px 0 12px">
-          ${rc.position || rc.rank || ''} · 員編 ${rc.staffId} — 確認後加入你的 Crew 名單
+          ${esc(rc.position || rc.rank || '')} · 員編 ${esc(rc.staffId)} — 確認後加入你的 Crew 名單
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -170,6 +181,11 @@ function _promptPrefilledCrew(rc) {
             <label class="form-label">Last Name</label>
             <input class="form-input" id="pf-last" type="text" value="${esc(rc.lastName)}">
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="pf-nick">Nickname (optional)</label>
+          <input class="form-input" id="pf-nick" type="text" maxlength="${CREW_NICKNAME_MAX}"
+                 placeholder="e.g. Ace" autocomplete="off">
         </div>
         <div class="form-group">
           <label class="form-label">Position</label>
@@ -221,6 +237,7 @@ function _promptPrefilledCrew(rc) {
     overlay.querySelector('#pf-save').addEventListener('click', async () => {
       const first = (overlay.querySelector('#pf-first').value || '').trim()
       const last  = (overlay.querySelector('#pf-last').value  || '').trim()
+      const nick  = normalizeCrewNickname(overlay.querySelector('#pf-nick').value)
       const posv  = overlay.querySelector('#pf-pos').value
       const empId = (overlay.querySelector('#pf-empid').value || '').trim()
       const lic   = (overlay.querySelector('#pf-lic').value   || '').trim()
@@ -229,8 +246,8 @@ function _promptPrefilledCrew(rc) {
       if (existing) { close(existing); return }   // 員編已存在 → 用既有，不重複建檔
       const id = `crew_${Date.now()}`
       const data = {
-        firstName: first, lastName: last, position: posv, active: true,
-        ...(empId    && { employeeId: empId }),
+        firstName: first, lastName: last, nickname: nick, position: posv, active: true,
+        ...(empId   && { employeeId: empId }),
         ...(lic      && { licenceNumber: lic }),
         ...(_natCode && { nationality: _natCode }),
       }
@@ -839,6 +856,7 @@ function closeSheet(sheetEl) {
 
 function renderSheetList(listEl, crewSlots, slotIdx, query) {
   if (!listEl) return
+  listEl.scrollTop = 0
   const q    = (query || '').toLowerCase().trim()
   // 只顯示 Active 機師（搜尋時也只在 Active 裡找）
   const crew = (state.crew || []).filter(c => isCrewActive(c))
@@ -854,10 +872,11 @@ function renderSheetList(listEl, crewSlots, slotIdx, query) {
   const currentId = slotIdx >= 0 ? crewSlots[slotIdx]?.id : null
   listEl.innerHTML = list.map(c => {
     const checked  = c.id === currentId
-    return `<div class="sheet-crew-item" data-id="${c.id}">
+    const nick = crewNickname(c)
+    return `<div class="sheet-crew-item" data-id="${_esc(c.id)}">
       ${crewAvatarHtml(c, 16)}
-      <div class="sci-name">${c.firstName} ${c.lastName}
-        <span style="font-size:11px;color:var(--text-dim);display:block">${crewMeta(c)}</span>
+      <div class="sci-name">${_esc(crewFullName(c))}${nick ? ` <span style="color:var(--text-dim)">(${_esc(nick)})</span>` : ''}
+        <span style="font-size:11px;color:var(--text-dim);display:block">${_esc(crewMeta(c))}</span>
       </div>
       ${checked ? '<span class="sci-check">✓</span>' : ''}
     </div>`
@@ -875,7 +894,7 @@ function renderCrewSlots(root, crewSlots) {
     if (person) {
       slot.classList.add('filled')
       if (avatarEl) avatarEl.textContent = initials2(person)
-      if (nameEl)   nameEl.textContent   = crewLabel(person)
+      if (nameEl) nameEl.textContent = crewLabel(person)
     } else {
       slot.classList.remove('filled')
       if (avatarEl) avatarEl.textContent = String(i + 1)
@@ -1348,7 +1367,7 @@ function step5Html() {
 
 function crewSheetHtml() {
   return `
-    <div class="sheet-overlay" id="crew-sheet">
+    <div class="sheet-overlay crew-picker" id="crew-sheet">
       <div class="sheet">
         <div class="sheet-handle"></div>
         <div class="sheet-head">
@@ -1360,7 +1379,7 @@ function crewSheetHtml() {
         </div>
         <div class="sheet-search-wrap">
           <input class="sheet-search-input" id="sheet-search"
-                 type="text" placeholder="Search by name or staff ID…"
+                 type="text" placeholder="Search by name, nickname or staff ID…"
                  autocomplete="off" autocorrect="off">
         </div>
         <div class="sheet-list" id="sheet-list"></div>
@@ -1478,6 +1497,11 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label" for="qc-nick">Nickname (optional)</label>
+        <input class="form-input" id="qc-nick" type="text" maxlength="${CREW_NICKNAME_MAX}"
+               placeholder="e.g. Ace" autocomplete="off">
+      </div>
+      <div class="form-group">
         <label class="form-label">Position</label>
         <select class="form-select" id="qc-pos">
           <option value="">— Select —</option>
@@ -1522,6 +1546,7 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
   overlay.querySelector('#qc-save').addEventListener('click', async () => {
     const first = (overlay.querySelector('#qc-first').value || '').trim()
     const last  = (overlay.querySelector('#qc-last').value  || '').trim()
+    const nick  = normalizeCrewNickname(overlay.querySelector('#qc-nick').value)
     const pos   = overlay.querySelector('#qc-pos').value
     const empId = (overlay.querySelector('#qc-empid').value || '').trim()
     const lic   = (overlay.querySelector('#qc-lic').value   || '').trim()
@@ -1543,7 +1568,7 @@ function showCrewQuickAdd(listEl, crewSlots, slotIdx, searchEl) {
 
     const id   = `crew_${Date.now()}`
     const data = {
-      firstName: first, lastName: last, position: pos, active: true,
+      firstName: first, lastName: last, nickname: nick, position: pos, active: true,
       ...(empId    && { employeeId: empId }),
       ...(lic      && { licenceNumber: lic }),
       ...(_natCode && { nationality: _natCode }),

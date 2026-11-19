@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════
 // Flight Detail Page
 // ══════════════════════════════════════════════
-import { getFlight, deleteFlight, updateFlight } from '../db.js'
+import { getFlight, deleteFlight, updateFlight }  from '../db.js'
 import { state, isCrewActive }                    from '../state.js'
 import { navigate, showToast }                    from '../app.js'
 import { invalidateStats }                        from './list.js'
@@ -14,7 +14,8 @@ import { FLEET, APPROACH_TYPES,
 import { isAircraftActive }                       from '../state.js'
 import { initialCrewSlots, crewFieldsFromSlots,
          crewMatchesQuery, crewMeta,
-         crewFullName }                           from '../utils/crew.js'
+         crewFullName, crewNickname,
+         flightCrewLabels }                       from '../utils/crew.js'
 
 const EDIT_CREW_ROLES = ['Pilot in Command', 'Crew 2', 'Crew 3', 'Crew 4']
 
@@ -89,6 +90,7 @@ function buildDetailHtml(f) {
   const blk = fmtDuration(f.blockTime)
   const flt = fmtDuration(f.flightTime)
   const nt  = fmtDuration(f.nightTime)
+  const crew = flightCrewLabels(f, state.crew)
 
   return `
     <!-- Hero -->
@@ -155,10 +157,10 @@ function buildDetailHtml(f) {
       </div>
 
       <!-- Crew -->
-      ${f.crewNames?.length ? `
-      <div class="detail-card">
+      ${crew.length ? `
+      <div class="detail-card detail-crew">
         <div class="detail-card-title">Crew</div>
-        ${f.crewNames.map((n, i) => detailRow(`Crew ${i+1}`, n)).join('')}
+        ${crew.map((label, i) => detailRow(`Crew ${i+1}`, _escapeHtml(label || 'Unknown crew'))).join('')}
       </div>` : ''}
 
       <!-- Map placeholder -->
@@ -811,6 +813,7 @@ function _editCrewSlotsHtml(crewSlots) {
   return crewSlots.map((person, i) => {
     const role = EDIT_CREW_ROLES[i] || `Crew ${i + 1}`
     const name = person ? crewFullName(person) || 'Unknown crew' : 'Tap to assign'
+    const nick = crewNickname(person)
     const meta = crewMeta(person) ||
       (person?.unresolved ? 'Saved crew ID (not in crew list)' : person?.legacyOnly ? 'Saved name only' : '')
     return `
@@ -818,7 +821,7 @@ function _editCrewSlotsHtml(crewSlots) {
         <div class="crew-avatar">${person ? _crewAvatar(person, String(i + 1)) : String(i + 1)}</div>
         <div class="crew-info">
           <div class="crew-role">${_escapeHtml(role)}</div>
-          <div class="crew-name-val">${_escapeHtml(name)}</div>
+          <div class="crew-name-val">${_escapeHtml(name)}${nick ? ` <span style="color:var(--text-dim)">(${_escapeHtml(nick)})</span>` : ''}</div>
           ${meta ? `<div class="edit-crew-meta">${_escapeHtml(meta)}</div>` : ''}
         </div>
         <span class="crew-chevron">›</span>
@@ -833,7 +836,7 @@ function _renderEditCrewSlots(overlay, crewSlots) {
 
 function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
   const sheet = document.createElement('div')
-  sheet.className = 'sheet-overlay open'
+  sheet.className = 'sheet-overlay crew-picker open'
   sheet.style.zIndex = '10001'
 
   const renderList = (query = '') => {
@@ -841,7 +844,7 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
     const crew = (state.crew || []).filter(c => isCrewActive(c))
     const list = q ? crew.filter(c => crewMatchesQuery(c, q)) : crew
     const currentId = crewSlots[slotIdx]?.id || ''
-    const clearRow = crewSlots[slotIdx] ? `
+    const clearRow = !q && crewSlots[slotIdx] ? `
       <div class="sheet-crew-item edit-crew-clear" data-clear="1">
         <div class="sci-avatar">-</div>
         <div class="sci-name">Clear this slot</div>
@@ -849,7 +852,7 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
     const rows = list.length ? list.map(c => `
       <div class="sheet-crew-item" data-id="${_escapeHtml(c.id)}">
         <div class="sci-avatar">${_crewAvatar(c, '')}</div>
-        <div class="sci-name">${_escapeHtml(crewFullName(c))}
+        <div class="sci-name">${_escapeHtml(crewFullName(c))}${crewNickname(c) ? ` <span style="color:var(--text-dim)">(${_escapeHtml(crewNickname(c))})</span>` : ''}
           <span style="font-size:11px;color:var(--text-dim);display:block">${_escapeHtml(crewMeta(c))}</span>
         </div>
         ${c.id === currentId ? '<span class="sci-check">✓</span>' : ''}
@@ -857,7 +860,9 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
       <div style="padding:24px;text-align:center;color:var(--text-faint);font-size:13px">
         ${q ? 'No crew found' : 'No active crew'}
       </div>`
-    sheet.querySelector('#edit-crew-list').innerHTML = clearRow + rows
+    const results = sheet.querySelector('#edit-crew-list')
+    results.innerHTML = clearRow + rows
+    results.scrollTop = 0
   }
 
   sheet.innerHTML = `
@@ -869,7 +874,7 @@ function _openEditCrewPicker(overlay, crewSlots, slotIdx, onChange) {
       </div>
       <div class="sheet-search-wrap">
         <input class="sheet-search-input" id="edit-crew-search"
-               type="text" placeholder="Search by name or staff ID..."
+               type="text" placeholder="Search by name, nickname or staff ID..."
                autocomplete="off" autocorrect="off">
       </div>
       <div class="sheet-list" id="edit-crew-list"></div>

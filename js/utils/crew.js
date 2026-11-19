@@ -27,13 +27,25 @@ export function crewMeta(person) {
   return [person?.position, person?.employeeId].filter(Boolean).join(' · ')
 }
 
-/** "Name · EmployeeID" label that disambiguates same-name crew */
+export const CREW_NICKNAME_MAX = 32
+
+/** Trimmed nickname for storage ('' clears it) */
+export function normalizeCrewNickname(value) {
+  return String(value ?? '').trim().slice(0, CREW_NICKNAME_MAX)
+}
+
+/** Nickname stored on a Crew document ('' when none) */
+export function crewNickname(person) {
+  return String(person?.nickname ?? '').trim()
+}
+
+/** "Name (Nickname) · EmployeeID" label that disambiguates same-name crew */
 export function crewLabel(person) {
-  const name = crewFullName(person)
+  const name = withNickname(crewFullName(person), crewNickname(person))
   return person?.employeeId ? `${name} · ${person.employeeId}` : name
 }
 
-/** Picker search: name (either order) or employee ID */
+/** Picker search: name (either order), nickname or employee ID */
 export function crewMatchesQuery(person, query) {
   const q = crewNameKey(query)
   if (!q) return true
@@ -41,7 +53,28 @@ export function crewMatchesQuery(person, query) {
   const last  = crewNameKey(person?.lastName)
   return `${first} ${last}`.includes(q) ||
          `${last} ${first}`.includes(q) ||
+         crewNameKey(person?.nickname).includes(q) ||
          crewNameKey(person?.employeeId).includes(q)
+}
+
+/**
+ * Resolve nicknames only for ID-backed rows. Old mixed arrays with unequal
+ * lengths have no reliable way to pair saved names with IDs.
+ */
+export function flightCrewLabels(f, allCrew) {
+  const byId = new Map((allCrew || []).map(c => [c.id, c]))
+  const ids = Array.isArray(f?.crew) ? f.crew : []
+  const names = Array.isArray(f?.crewNames) ? f.crewNames : []
+  if (names.length && ids.length !== names.length) return names
+  return (names.length ? names : ids).map((_, i) => {
+    const person = byId.get(String(ids[i] ?? '').trim())
+    const name = names[i] || crewFullName(person)
+    return withNickname(name, crewNickname(person))
+  })
+}
+
+function withNickname(name, nickname) {
+  return nickname ? (name ? `${name} (${nickname})` : nickname) : name
 }
 
 /**

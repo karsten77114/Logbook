@@ -150,6 +150,25 @@ window.addEventListener('hashchange', () => {
   if (state.user) router()
 })
 
+// ── Visual viewport (mobile keyboard) ─────────
+// 把目前可視區高度 / 位移同步成 CSS 變數，讓搜尋中的 Hub 與 Crew 選單
+// 能貼著鍵盤上緣顯示。沒有 visualViewport 的瀏覽器退回 window.innerHeight。
+
+function syncViewportVars() {
+  const vv    = window.visualViewport
+  const style = document.documentElement.style
+  style.setProperty('--vv-h',   `${Math.round(vv ? vv.height : window.innerHeight)}px`)
+  style.setProperty('--vv-top', `${Math.round(vv ? vv.offsetTop : 0)}px`)
+}
+
+syncViewportVars()
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewportVars)
+  window.visualViewport.addEventListener('scroll', syncViewportVars)
+} else {
+  window.addEventListener('resize', syncViewportVars)
+}
+
 // ── Splash ────────────────────────────────────
 
 function hideSplash() {

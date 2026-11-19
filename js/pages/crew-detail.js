@@ -6,7 +6,17 @@ import { state, setCrew, isCrewActive }        from '../state.js'
 import { navigate, showToast }                 from '../app.js'
 import { fmtDuration }                         from '../utils/time.js'
 import { showCountryPicker, getCountryName }   from '../data/countries.js'
-import { matchCrewFlights }                    from '../utils/crew.js'
+import { matchCrewFlights, crewFullName,
+         crewNickname, normalizeCrewNickname,
+         CREW_NICKNAME_MAX }                  from '../utils/crew.js'
+
+function _esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 
 export async function renderCrewDetail(root, params) {
   const crewId = params[0]
@@ -18,7 +28,7 @@ export async function renderCrewDetail(root, params) {
     <div class="page">
       <div class="topbar">
         <button class="topbar-action btn-back" id="btn-back">‹</button>
-        <div class="topbar-title">${person.firstName} ${person.lastName}</div>
+        <div class="topbar-title">${_esc(crewFullName(person))}</div>
         <button class="topbar-action" id="btn-edit" style="font-size:14px;letter-spacing:0.04em">Edit</button>
       </div>
       <div class="scroll" id="crew-detail-scroll">
@@ -78,8 +88,9 @@ function _paintDetail(root, person, stats, flights, ambiguous) {
     <!-- Profile card -->
     <div class="cd-profile-card">
       ${_avatarHtml}
-      <div class="cd-name">${person.firstName} ${person.lastName}</div>
-      <div class="cd-position">${person.position || '—'}</div>
+      <div class="cd-name">${_esc(crewFullName(person))}</div>
+      ${crewNickname(person) ? `<div class="cd-position">${_esc(crewNickname(person))}</div>` : ''}
+      <div class="cd-position">${_esc(person.position) || '—'}</div>
       <div class="cd-stats-row">
         <div class="cd-stat">
           <div class="cd-stat-val">${stats.sectors}</div>
@@ -100,9 +111,10 @@ function _paintDetail(root, person, stats, flights, ambiguous) {
 
     <!-- Info rows -->
     <div class="cd-section">
-      ${_infoRow('#', 'Employee ID',    person.employeeId    || '—')}
-      ${_infoRow('📋', 'Licence No.',   person.licenceNumber || '—')}
-      ${_infoRow('🌏', 'Nationality',   person.nationality   || '—')}
+      ${crewNickname(person) ? _infoRow('✎', 'Nickname', _esc(crewNickname(person))) : ''}
+      ${_infoRow('#', 'Employee ID',    _esc(person.employeeId)    || '—')}
+      ${_infoRow('📋', 'Licence No.',   _esc(person.licenceNumber) || '—')}
+      ${_infoRow('🌏', 'Nationality',   _esc(person.nationality)   || '—')}
     </div>
 
     <!-- Active toggle -->
@@ -238,12 +250,18 @@ function _showEditSheet(root, person) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">First Name</label>
-          <input class="form-input" id="cr-first" type="text" value="${person.firstName || ''}">
+          <input class="form-input" id="cr-first" type="text" value="${_esc(person.firstName)}">
         </div>
         <div class="form-group">
           <label class="form-label">Last Name</label>
-          <input class="form-input" id="cr-last" type="text" value="${person.lastName || ''}">
+          <input class="form-input" id="cr-last" type="text" value="${_esc(person.lastName)}">
         </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cr-nick">Nickname (optional)</label>
+        <input class="form-input" id="cr-nick" type="text" maxlength="${CREW_NICKNAME_MAX}"
+               value="${_esc(crewNickname(person))}" placeholder="e.g. Ace" autocomplete="off">
       </div>
 
       <div class="form-group">
@@ -260,12 +278,12 @@ function _showEditSheet(root, person) {
         <div class="form-group">
           <label class="form-label">Employee ID</label>
           <input class="form-input mono" id="cr-empid" type="text"
-                 value="${person.employeeId || ''}">
+                 value="${_esc(person.employeeId)}">
         </div>
         <div class="form-group">
           <label class="form-label">Licence No.</label>
           <input class="form-input mono" id="cr-licence" type="text"
-                 value="${person.licenceNumber || ''}">
+                 value="${_esc(person.licenceNumber)}">
         </div>
       </div>
 
@@ -320,7 +338,8 @@ function _showEditSheet(root, person) {
     const data = {
       firstName:     overlay.querySelector('#cr-first').value.trim(),
       lastName:      overlay.querySelector('#cr-last').value.trim(),
-      position:      overlay.querySelector('#cr-position').value,
+      nickname:      normalizeCrewNickname(overlay.querySelector('#cr-nick').value),
+      position:     overlay.querySelector('#cr-position').value,
       employeeId:    overlay.querySelector('#cr-empid').value.trim(),
       licenceNumber: overlay.querySelector('#cr-licence').value.trim(),
       nationality:   _natCode,

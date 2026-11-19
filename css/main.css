@@ -46,6 +46,10 @@
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bot:    env(safe-area-inset-bottom, 0px);
   --nav-safe-bot: 0px;
+
+  /* 由 app.js 依 window.visualViewport 同步（鍵盤開啟時變小） */
+  --vv-h:        100%;
+  --vv-top:      0px;
 }
 
 /* ── Reset ─────────────────────────────────── */
@@ -962,6 +966,68 @@ html, body {
 }
 .sci-name { font-size: 14px; font-weight: 500; color: var(--text); flex: 1; }
 .sci-check { color: var(--green); font-size: 16px; font-weight: 700; }
+
+/* ── Mobile keyboard: 搜尋結果維持在鍵盤上方可見 ── */
+
+/* Flights Hub：搜尋框聚焦時，結果緊接搜尋框，隱藏 stats 與底部導覽 */
+#list-page.hub-search-focus {
+  inset: auto;
+  top: var(--vv-top);
+  left: 0; right: 0;
+  height: var(--vv-h);
+}
+#list-page.hub-search-focus .stats-header,
+#list-page.hub-search-focus .bottom-nav,
+#list-page.hub-search-focus .fab {
+  display: none !important;
+}
+#list-page.hub-search-focus .scroll {
+  min-height: 0;
+  padding-bottom: 16px;
+}
+/* 有 Flights 篩選時 stats 與結果無關，不佔版面 */
+#list-page.hub-flights-filtered .stats-header {
+  display: none !important;
+}
+
+/* Keep crew results in place between input blur and row selection. */
+.crew-picker.open {
+  inset: auto;
+  top: var(--vv-top);
+  left: 0; right: 0;
+  height: var(--vv-h);
+  align-items: flex-start;
+}
+.crew-picker .sheet {
+  margin-top: var(--safe-top);
+  max-height: min(75vh, calc(var(--vv-h) - var(--safe-top) - 8px));
+  border-radius: 0 0 20px 20px;
+  padding-bottom: 8px;
+}
+.crew-picker .sheet-list {
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+/* 手機上輸入框 16px，避免 Safari 聚焦時自動放大 */
+@media (max-width: 820px) {
+  #search-input,
+  .crew-picker .sheet-search-input { font-size: 16px; }
+}
+
+.crew-picker .sci-name,
+.crew-slot .crew-name-val,
+[data-crew-id] .hub-row-name,
+.cd-name,
+.cd-position {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.detail-crew .detail-row { gap: 12px; }
+.detail-crew .detail-key { flex-shrink: 0; }
+.detail-crew .detail-val { overflow-wrap: anywhere; text-align: right; }
 
 /* 底部 Back / Continue 按鈕 */
 .step-nav {

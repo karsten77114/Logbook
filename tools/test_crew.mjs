@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   crewFullName, crewNameKey, flightCrewIds, crewMeta, crewLabel,
   crewMatchesQuery, matchCrewFlights, initialCrewSlots, crewFieldsFromSlots,
+  CREW_NICKNAME_MAX, normalizeCrewNickname, crewNickname, flightCrewLabels,
 } from '../js/utils/crew.js'
 
 const A  = { id: 'c1', firstName: 'Alex', lastName: 'Lee', employeeId: '1001', position: 'FO' }
@@ -71,5 +72,37 @@ assert.deepEqual(crewFieldsFromSlots(slots), {
 })
 const mixed = [slots[2], slots[0], slots[1]]
 assert.deepEqual(initialCrewSlots(crewFieldsFromSlots(mixed), all), mixed)
+
+// nickname: normalize / display / search
+const N1 = { id: 'n1', firstName: 'Alex', lastName: 'Lee', employeeId: '1001', nickname: '  Ace ' }
+const N2 = { id: 'n2', firstName: 'Alex', lastName: 'Lee', employeeId: '2002', nickname: 'Bear' }
+assert.equal(normalizeCrewNickname('  Ace  '), 'Ace')
+assert.equal(normalizeCrewNickname('   '), '')
+assert.equal(normalizeCrewNickname('x'.repeat(40)).length, CREW_NICKNAME_MAX)
+assert.equal(crewNickname(N1), 'Ace')
+assert.equal(crewNickname(A), '')
+assert.equal(crewLabel(N1), 'Alex Lee (Ace) · 1001')
+assert.ok(crewMatchesQuery(N1, 'ace'))
+assert.ok(crewMatchesQuery(N1, ' ACE '))
+assert.ok(!crewMatchesQuery(N2, 'ace'))
+assert.ok(crewMatchesQuery(N2, 'alex'))
+assert.ok(!crewMatchesQuery(A, 'ace'))
+
+// saved-flight rows: nickname resolved strictly by crew ID
+const nAll = [N1, N2, B]
+assert.deepEqual(flightCrewLabels({ crew: ['n2', 'n1'], crewNames: ['Alex Lee', 'Alex Lee'] }, nAll), ['Alex Lee (Bear)', 'Alex Lee (Ace)'])
+assert.deepEqual(flightCrewLabels({ crew: ['n1'] }, nAll), ['Alex Lee (Ace)'])
+// legacy name-only rows keep names, no nickname
+assert.deepEqual(flightCrewLabels({ crew: [], crewNames: ['Alex Lee', 'Bo Chen'] }, nAll), ['Alex Lee', 'Bo Chen'])
+// null ids / unresolved ids keep saved names
+assert.deepEqual(flightCrewLabels({ crew: [null, 'gone'], crewNames: ['Legacy', 'Old Name'] }, nAll), ['Legacy', 'Old Name'])
+// snapshot name is preserved even if crew was renamed later
+assert.deepEqual(flightCrewLabels({ crew: ['n1'], crewNames: ['Old Alex'] }, nAll), ['Old Alex (Ace)'])
+// Old unaligned arrays: keep the original names without guessing which row owns the ID.
+assert.deepEqual(flightCrewLabels({ crew: ['n1', 'x', 'y'], crewNames: ['Alex Lee', 'Zed'] }, nAll), ['Alex Lee', 'Zed'])
+assert.deepEqual(flightCrewLabels({ crew: ['n1'], crewNames: ['Alex Lee', 'Alex Lee'] }, nAll), ['Alex Lee', 'Alex Lee'])
+// nickname never alters matching / slot snapshots
+assert.equal(matchCrewFlights(N1, nAll, [{ id: 'q', crew: ['n1'] }]).matched.length, 1)
+assert.deepEqual(crewFieldsFromSlots([N1]), { crew: ['n1'], crewNames: ['Alex Lee'] })
 
 console.log('test_crew: all passed')

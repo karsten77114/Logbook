@@ -15,7 +15,17 @@ import { navigate, showToast }                       from '../app.js'
 import { showCountryPicker, getCountryName }         from '../data/countries.js'
 import { navIcon }                                   from '../ui/nav-icons.js'
 import { AIRPORTS }                                  from '../data/airports.js'
-import { crewMatchesQuery, crewMeta }                from '../utils/crew.js'
+import { crewMatchesQuery, crewMeta, crewFullName,
+         crewNickname, normalizeCrewNickname,
+         CREW_NICKNAME_MAX }                         from '../utils/crew.js'
+
+function _esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
 
 // ── Module-level state ────────────────────────
 let _section    = 'flights'  // flights | crew | airplanes | experience
@@ -26,6 +36,9 @@ let _allFlights = null       // cached all flights (avoid double-fetch)
 // （舊版兩邊共用 state.search 且兩個 listener 都綁在同一個 input 上，在 Crew 打字
 //  350ms 後會被 flights 的 handler 蓋掉整個清單）
 const _search = { flights: '', crew: '' }
+
+// 單一 debounce timer：切分頁時一併清掉，避免舊分頁的重繪蓋到新分頁
+let _searchTimer = null
 
 const SECTIONS = [
   { id: 'flights',    label: 'Flights',    icon: '✈' },
@@ -39,6 +52,7 @@ export async function renderList(root) {
   root.innerHTML = buildShell()
   attachNav(root)
   attachDropdown(root)
+  attachSearchFocus(root)
 
   // Load data needed across sections
   await refreshData(root)
@@ -178,6 +192,8 @@ function closeDropdown(root) {
 
 // ── Section router ────────────────────────────
 function renderSection(root) {
+  clearTimeout(_searchTimer)
+
   // Update title
   const sec = SECTIONS.find(s => s.id === _section) || SECTIONS[0]
   const titleEl = root.querySelector('#hub-title-text')
@@ -215,12 +231,14 @@ function renderSection(root) {
       searchInput.placeholder = 'Flight no. or airport…'
       searchInput.value = _search.flights
     } else if (isCrewSec) {
-      searchInput.placeholder = 'Crew name or staff ID…'
+      searchInput.placeholder = 'Crew name, nickname or staff ID…'
       searchInput.value = _search.crew
     } else {
       searchInput.value = ''
     }
   }
+
+  syncSearchState(root)
 
   // Route to section renderer
   switch (_section) {
@@ -229,6 +247,38 @@ function renderSection(root) {
     case 'airplanes':  renderAirplanesSection(root);  break
     case 'experience': renderExperienceSection(root); break
   }
+}
+
+// ── Search focus (mobile keyboard) ────────────
+// 聚焦時由 CSS 隱藏 stats / 底部導覽，結果貼在搜尋框下方；
+// 高度由 app.js 同步的 --vv-h / --vv-top 決定。
+function attachSearchFocus(root) {
+  const inp  = root.querySelector('#search-input')
+  const page = root.querySelector('#list-page')
+  if (!inp || !page) return
+  let blurTimer
+  inp.addEventListener('focus', () => {
+    clearTimeout(blurTimer)
+    page.classList.add('hub-search-focus')
+    resetHubScroll(root)
+  })
+  inp.addEventListener('blur', () => {
+    // 稍微延後，避免點結果列時版面先跳動而吃掉 click
+    clearTimeout(blurTimer)
+    blurTimer = setTimeout(() => page.classList.remove('hub-search-focus'), 150)
+  })
+}
+
+/** 有 Flights 篩選時隱藏 stats（stats 是全部航班的總計，與篩選結果無關） */
+function syncSearchState(root) {
+  const page = root.querySelector('#list-page')
+  const filtered = _section === 'flights' && _search.flights.trim() !== ''
+  page?.classList.toggle('hub-flights-filtered', filtered)
+}
+
+function resetHubScroll(root) {
+  const scroll = root.querySelector('#list-scroll')
+  if (scroll) scroll.scrollTop = 0
 }
 
 // ══════════════════════════════════════════════
@@ -253,6 +303,7 @@ async function renderFlightsSection(root) {
       return
     }
   }
+  if (_section !== 'flights') return   // 載入期間已切到別的分頁，不要蓋掉
 
   if (!_allStats) {
     _allStats = computeStats(_allFlights)
@@ -407,12 +458,16 @@ function attachSearchFilter(root) {
   const inp = root.querySelector('#search-input')
   if (!inp || inp.dataset.flightsBound) return   // 只綁一次，避免重複 listener
   inp.dataset.flightsBound = '1'
-  let debounceTimer
   inp.addEventListener('input', e => {
     if (_section !== 'flights') return           // 不要在 Crew 分頁蓋掉人員清單
-    clearTimeout(debounceTimer)
+    clearTimeout(_searchTimer)
     _search.flights = e.target.value
-    debounceTimer = setTimeout(() => renderFlightsList(root, _allFlights || []), 350)
+    syncSearchState(root)
+    _searchTimer = setTimeout(() => {
+      if (_section !== 'flights') return
+      renderFlightsList(root, _allFlights || [])
+      resetHubScroll(root)
+    }, 350)
   })
 }
 
@@ -441,12 +496,15 @@ function _attachCrewSearch(root) {
   const inp = root.querySelector('#search-input')
   if (!inp || inp.dataset.crewBound) return
   inp.dataset.crewBound = '1'
-  let timer
   inp.addEventListener('input', e => {
     if (_section !== 'crew') return
-    clearTimeout(timer)
+    clearTimeout(_searchTimer)
     _search.crew = e.target.value
-    timer = setTimeout(() => _paintCrewList(root), 200)
+    _searchTimer = setTimeout(() => {
+      if (_section !== 'crew') return
+      _paintCrewList(root)
+      resetHubScroll(root)
+    }, 200)
   })
 }
 
@@ -457,7 +515,7 @@ function _paintCrewList(root) {
   let crew = state.crew || []
 
   if (q) {
-    // Crew 只搜「人」：姓名（含反過來寫）與員編
+    // Crew 只搜「人」：姓名（含反過來寫）、暱稱與員編
     crew = crew.filter(c => crewMatchesQuery(c, q))
   }
 
@@ -504,15 +562,16 @@ function _flagEmoji(cc) {
 function crewRowHtml(c) {
   const active = isCrewActive(c)
   const flag   = _flagEmoji(c.nationality)
+  const nick   = crewNickname(c)
   const avatarInner = flag
     ? `<span style="font-size:22px">${flag}</span>`
     : `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 10c-4.4 0-8 2-8 4v1h16v-1c0-2-3.6-4-8-4z"/></svg>`
   return `
-    <div class="hub-row" data-crew-id="${c.id}">
+    <div class="hub-row" data-crew-id="${_esc(c.id)}">
       <div class="hub-row-avatar" style="${active ? '' : 'opacity:0.4'}">${avatarInner}</div>
       <div class="hub-row-info">
-        <div class="hub-row-name">${c.firstName || ''} ${c.lastName || ''}</div>
-        <div class="hub-row-sub">${crewMeta(c) || '—'}</div>
+        <div class="hub-row-name">${_esc(crewFullName(c))}${nick ? ` <span style="color:var(--text-dim);font-weight:500">(${_esc(nick)})</span>` : ''}</div>
+        <div class="hub-row-sub">${_esc(crewMeta(c)) || '—'}</div>
       </div>
       <div class="hub-status-badge ${active ? 'badge-active' : 'badge-inactive'}">
         ${active ? 'Active' : 'Inactive'}
@@ -546,12 +605,18 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">First Name</label>
-          <input class="form-input" id="cr-first" type="text" value="${c.firstName || ''}">
+          <input class="form-input" id="cr-first" type="text" value="${_esc(c.firstName)}">
         </div>
         <div class="form-group">
           <label class="form-label">Last Name</label>
-          <input class="form-input" id="cr-last" type="text" value="${c.lastName || ''}">
+          <input class="form-input" id="cr-last" type="text" value="${_esc(c.lastName)}">
         </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="cr-nick">Nickname (optional)</label>
+        <input class="form-input" id="cr-nick" type="text" maxlength="${CREW_NICKNAME_MAX}"
+               value="${_esc(crewNickname(c))}" placeholder="e.g. Ace" autocomplete="off">
       </div>
 
       <div class="form-group">
@@ -567,11 +632,11 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Employee ID</label>
-          <input class="form-input mono" id="cr-empid" type="text" value="${c.employeeId || ''}">
+          <input class="form-input mono" id="cr-empid" type="text" value="${_esc(c.employeeId)}">
         </div>
         <div class="form-group">
           <label class="form-label">Licence No.</label>
-          <input class="form-input mono" id="cr-licence" type="text" value="${c.licenceNumber || ''}">
+          <input class="form-input mono" id="cr-licence" type="text" value="${_esc(c.licenceNumber)}">
         </div>
       </div>
 
@@ -625,7 +690,8 @@ function showCrewEditSheet(root, person, onSave, onDelete) {
     const data = {
       firstName:     overlay.querySelector('#cr-first').value.trim(),
       lastName:      overlay.querySelector('#cr-last').value.trim(),
-      position:      overlay.querySelector('#cr-position').value,
+      nickname:      normalizeCrewNickname(overlay.querySelector('#cr-nick').value),
+      position:     overlay.querySelector('#cr-position').value,
       employeeId:    overlay.querySelector('#cr-empid').value.trim(),
       licenceNumber: overlay.querySelector('#cr-licence').value.trim(),
       nationality:   _natCode,
